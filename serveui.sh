@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # =============================================
-# Ubuntu 服务器部署脚本 - 终端GUI稳定版 v8.2
-# 修复控制字符显示问题
+# Ubuntu 服务器部署脚本 - Dialog GUI版 v9.0
+# 使用dialog工具创建完整GUI界面
 # =============================================
 
 # 颜色定义
@@ -13,81 +13,23 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
-BOLD='\033[1m'
 NC='\033[0m'
 
 # 全局变量
-SCRIPT_VERSION="8.2"
-SCRIPT_NAME="yx-deploy"
+SCRIPT_VERSION="9.0"
+SCRIPT_NAME="yx-deploy-gui"
 BACKUP_DIR="/backup/${SCRIPT_NAME}"
 LOG_DIR="/var/log/${SCRIPT_NAME}"
 INSTALL_LOG="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
-AUTO_RECOVERY=false
+DIALOG_TITLE="Ubuntu服务器部署工具 v$SCRIPT_VERSION"
 
-# ====================== 终端修复函数 ======================
-
-fix_terminal() {
-    # 重置终端状态
-    stty sane
-    tput reset
-    echo -ne "\033c"
-    clear
-}
-
-safe_read() {
-    # 安全读取输入，防止控制字符问题
-    local prompt="$1"
-    local default="$2"
-    local input=""
-    
-    # 设置原始模式以避免特殊字符
-    stty -echo -icanon time 0 min 0
-    
-    echo -ne "${CYAN}$prompt${NC} "
-    if [ -n "$default" ]; then
-        echo -ne "[$default]: "
-    fi
-    
-    # 读取单个字符直到回车
-    while IFS= read -r -n1 char; do
-        case "$char" in
-            $'\0')  # null character
-                continue
-                ;;
-            $'\n'|$'\r')  # enter
-                echo
-                break
-                ;;
-            $'\177'|$'\b')  # backspace
-                if [ ${#input} -gt 0 ]; then
-                    input="${input%?}"
-                    echo -ne "\b \b"
-                fi
-                ;;
-            [[:print:]])  # 可打印字符
-                input+="$char"
-                echo -n "$char"
-                ;;
-        esac
-    done
-    
-    # 恢复终端设置
-    stty echo icanon
-    
-    if [ -z "$input" ] && [ -n "$default" ]; then
-        echo "$default"
-    else
-        echo "$input"
-    fi
-}
-
-# ====================== 基础函数 ======================
+# ====================== 初始化 ======================
 
 init_log_system() {
     mkdir -p "$LOG_DIR" 2>/dev/null
     mkdir -p "$BACKUP_DIR" 2>/dev/null
     touch "$INSTALL_LOG" 2>/dev/null
-    exec 2>> "$INSTALL_LOG"
+    echo "=== 脚本开始执行 $(date) ===" >> "$INSTALL_LOG"
 }
 
 log() {
@@ -111,501 +53,420 @@ error() {
     echo "[${timestamp}] ERROR: $msg" >> "$INSTALL_LOG"
 }
 
-# ====================== 显示函数 ======================
-
-show_header() {
-    fix_terminal
-    echo -e "${PURPLE}"
-    echo "╔══════════════════════════════════════════════════════════════════════════════╗"
-    echo "║                                                                              ║"
-    echo "║               Ubuntu 服务器部署工具 v$SCRIPT_VERSION                        ║"
-    echo "║                     终端GUI稳定版                                            ║"
-    echo "║                                                                              ║"
-    echo "╚══════════════════════════════════════════════════════════════════════════════╝"
-    echo -e "${NC}"
-    echo ""
-}
-
-show_menu() {
-    local title="$1"
-    shift
-    local menu_items=("$@")
-    
-    show_header
-    echo -e "${CYAN}$title${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    echo ""
-    
-    local i=1
-    for item in "${menu_items[@]}"; do
-        if [[ $item != "---" ]]; then
-            printf "  %2d. %s\n" $i "$item"
-            ((i++))
-        else
-            echo ""
-        fi
-    done
-    
-    echo ""
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    echo -e "${YELLOW}提示: 输入数字选择，0返回/退出${NC}"
-    echo ""
-    
-    # 使用安全读取
-    local choice
-    read -p "请选择 (0-$((i-1))): " choice
-    
-    # 验证输入
-    if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 0 ] || [ "$choice" -ge $i ]; then
-        error "无效选择！"
-        sleep 2
-        return 0
+check_root() {
+    if [[ $EUID -ne 0 ]]; then
+        error "请使用root权限运行此脚本"
+        echo "使用: sudo bash $0"
+        exit 1
     fi
-    
-    echo "$choice"
 }
 
-show_yesno() {
-    local prompt="$1"
-    
-    while true; do
-        echo ""
-        echo -e "${YELLOW}$prompt${NC}"
-        echo -n "(y/N): "
-        
-        # 使用安全读取
-        local answer
-        read -n1 answer
-        echo ""
-        
-        case "$answer" in
-            [Yy]) return 0 ;;
-            [Nn]) return 1 ;;
-            *) 
-                error "请输入 y 或 n"
-                sleep 1
-                ;;
-        esac
-    done
+check_dialog() {
+    if ! command -v dialog >/dev/null 2>&1; then
+        echo "正在安装dialog工具..."
+        apt-get update -y >/dev/null 2>&1
+        apt-get install -y dialog >/dev/null 2>&1
+        if [ $? -ne 0 ]; then
+            error "无法安装dialog工具"
+            exit 1
+        fi
+        log "dialog工具安装成功"
+    fi
 }
 
-# ====================== 主菜单 ======================
+# ====================== Dialog GUI函数 ======================
 
-main_menu() {
+show_welcome() {
+    dialog --title "$DIALOG_TITLE" \
+           --msgbox "\n欢迎使用Ubuntu服务器部署工具\n\n本工具提供完整的服务器部署和管理功能\n\n包括：\n• 系统优化配置\n• Docker容器安装\n• Web面板安装\n• Web服务器安装\n• 数据库安装\n• 服务管理\n• 系统监控\n\n日志文件: $INSTALL_LOG" \
+           15 70
+    
+    if [ $? -ne 0 ]; then
+        exit_program
+    fi
+}
+
+show_main_menu() {
     while true; do
-        choice=$(show_menu "主菜单" \
-            "系统优化配置" \
-            "安装Docker容器" \
-            "安装1Panel面板" \
-            "安装宝塔面板" \
-            "安装Web服务器" \
-            "安装数据库" \
-            "服务管理" \
-            "系统监控" \
-            "卸载工具" \
-            "系统信息" \
-            "查看日志" \
-            "退出程序")
+        choice=$(dialog --title "$DIALOG_TITLE" \
+                        --menu "请选择要执行的操作：" \
+                        20 60 13 \
+                        "1" "系统优化配置" \
+                        "2" "安装Docker容器" \
+                        "3" "安装1Panel面板" \
+                        "4" "安装宝塔面板" \
+                        "5" "安装Web服务器" \
+                        "6" "安装数据库" \
+                        "7" "服务管理" \
+                        "8" "系统监控" \
+                        "9" "卸载工具" \
+                        "10" "系统信息" \
+                        "11" "查看日志" \
+                        "0" "退出程序" \
+                        3>&1 1>&2 2>&3)
+        
+        exit_status=$?
+        
+        if [ $exit_status -ne 0 ]; then
+            exit_program
+            continue
+        fi
         
         case $choice in
             1) system_optimization_menu ;;
-            2) install_docker_menu ;;
-            3) install_1panel_menu ;;
-            4) install_baota_menu ;;
+            2) install_docker_gui ;;
+            3) install_1panel_gui ;;
+            4) install_baota_gui ;;
             5) install_web_menu ;;
             6) install_database_menu ;;
             7) service_management_menu ;;
             8) system_monitor_menu ;;
             9) uninstall_menu ;;
-            10) system_info_menu ;;
-            11) show_log_menu ;;
-            12) exit_program ;;
-            0) continue ;;
+            10) system_info_gui ;;
+            11) show_log_gui ;;
+            0) exit_program ;;
         esac
     done
+}
+
+show_msgbox() {
+    local title="$1"
+    local message="$2"
+    local height="${3:-10}"
+    local width="${4:-60}"
+    
+    dialog --title "$title" \
+           --msgbox "$message" \
+           $height $width
+}
+
+show_yesno() {
+    local title="$1"
+    local message="$2"
+    
+    dialog --title "$title" \
+           --yesno "$message" \
+           8 60
+    
+    return $?
+}
+
+show_input() {
+    local title="$1"
+    local prompt="$2"
+    local default="$3"
+    
+    dialog --title "$title" \
+           --inputbox "$prompt" \
+           8 60 "$default" \
+           3>&1 1>&2 2>&3
+}
+
+show_progress() {
+    local title="$1"
+    local cmd="$2"
+    
+    # 创建临时文件
+    local temp_file=$(mktemp)
+    
+    # 执行命令并将输出重定向到临时文件
+    (eval "$cmd" 2>&1 | while IFS= read -r line; do
+        echo "XXX"
+        echo "$line"
+        echo "XXX"
+    done) | dialog --title "$title" --gauge "请稍候..." 10 70 0
+    
+    rm -f "$temp_file"
+}
+
+# ====================== 系统信息 ======================
+
+system_info_gui() {
+    local info_text=""
+    
+    info_text+="=== 系统信息 ===\n\n"
+    info_text+="操作系统: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d'"' -f2)\n"
+    info_text+="内核版本: $(uname -r)\n"
+    info_text+="系统架构: $(uname -m)\n\n"
+    
+    info_text+="=== 硬件资源 ===\n\n"
+    info_text+="CPU核心数: $(nproc)\n"
+    info_text+="内存总量: $(free -h | awk '/^Mem:/ {print $2}')\n"
+    info_text+="磁盘空间: $(df -h / | awk 'NR==2 {print $2}')\n\n"
+    
+    info_text+="=== 网络信息 ===\n\n"
+    info_text+="主机名: $(hostname)\n"
+    info_text+="IP地址: $(hostname -I 2>/dev/null | awk '{print $1}')\n"
+    info_text+="运行时间: $(uptime -p)\n"
+    
+    show_msgbox "系统信息" "$info_text" 20
 }
 
 # ====================== 系统优化菜单 ======================
 
 system_optimization_menu() {
     while true; do
-        choice=$(show_menu "系统优化配置" \
-            "基础系统优化" \
-            "切换软件源" \
-            "安装常用工具" \
-            "安全加固配置" \
-            "性能优化配置" \
-            "返回主菜单")
+        choice=$(dialog --title "系统优化配置" \
+                        --menu "请选择优化项目：" \
+                        15 60 6 \
+                        "1" "基础系统优化" \
+                        "2" "切换软件源" \
+                        "3" "安装常用工具" \
+                        "4" "安全加固配置" \
+                        "5" "性能优化配置" \
+                        "6" "返回主菜单" \
+                        3>&1 1>&2 2>&3)
+        
+        if [ $? -ne 0 ]; then
+            return
+        fi
         
         case $choice in
-            1) basic_optimization ;;
-            2) change_mirror_source ;;
-            3) install_tools_menu ;;
-            4) security_hardening ;;
-            5) performance_tuning ;;
+            1) basic_optimization_gui ;;
+            2) change_mirror_source_gui ;;
+            3) install_tools_gui ;;
+            4) security_hardening_gui ;;
+            5) performance_tuning_gui ;;
             6) return ;;
-            0) return ;;
         esac
     done
 }
 
-basic_optimization() {
-    show_header
-    echo -e "${CYAN}基础系统优化${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    if ! show_yesno "是否执行基础系统优化？"; then
+basic_optimization_gui() {
+    if ! show_yesno "基础系统优化" "将执行以下操作：\n\n1. 更新软件包列表\n2. 升级现有软件包\n3. 清理无用包\n4. 设置时区（上海）\n5. 配置时间同步\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}1. 更新软件包列表...${NC}"
-    apt-get update -y
-    
-    echo -e "${BLUE}2. 升级软件包...${NC}"
-    apt-get upgrade -y
-    
-    echo -e "${BLUE}3. 清理无用包...${NC}"
-    apt-get autoremove -y
-    apt-get autoclean -y
-    
-    echo -e "${BLUE}4. 设置时区...${NC}"
-    timedatectl set-timezone Asia/Shanghai
-    
-    echo -e "${BLUE}5. 配置时间同步...${NC}"
-    systemctl enable chronyd
-    systemctl restart chronyd
+    # 执行优化
+    (
+        echo "20"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "40"
+        echo "# 升级软件包..."
+        apt-get upgrade -y
+        echo "60"
+        echo "# 清理无用包..."
+        apt-get autoremove -y
+        apt-get autoclean -y
+        echo "80"
+        echo "# 设置时区..."
+        timedatectl set-timezone Asia/Shanghai
+        echo "90"
+        echo "# 配置时间同步..."
+        systemctl enable chronyd
+        systemctl restart chronyd
+        echo "100"
+        echo "# 基础优化完成！"
+    ) | dialog --title "基础系统优化" --gauge "正在执行优化..." 10 70 0
     
     log "基础系统优化完成"
-    read -p "按回车键继续..."
+    show_msgbox "完成" "基础系统优化已完成！"
 }
 
-change_mirror_source() {
-    while true; do
-        show_header
-        echo -e "${CYAN}切换软件源${NC}"
-        echo "══════════════════════════════════════════════════════════════════════════════"
-        
-        local current_source=$(grep -E "^deb " /etc/apt/sources.list | head -1 | grep -o "http[s]*://[^ ]*" || echo "官方源")
-        echo -e "当前软件源: ${YELLOW}$current_source${NC}"
-        echo ""
-        
-        echo "可选镜像源："
-        echo "  1. 阿里云 (aliyun.com) - 推荐"
-        echo "  2. 清华大学 (tuna.tsinghua.edu.cn)"
-        echo "  3. 中科大 (ustc.edu.cn)"
-        echo "  4. 网易163 (mirrors.163.com)"
-        echo "  5. 华为云 (huaweicloud.com)"
-        echo "  6. 恢复默认官方源"
-        echo "  0. 返回"
-        echo ""
-        
-        local mirror_choice
-        read -p "请选择镜像源 (0-6): " mirror_choice
-        
-        case $mirror_choice in
-            0) return ;;
-            1) mirror_url="https://mirrors.aliyun.com/ubuntu/" ;;
-            2) mirror_url="https://mirrors.tuna.tsinghua.edu.cn/ubuntu/" ;;
-            3) mirror_url="https://mirrors.ustc.edu.cn/ubuntu/" ;;
-            4) mirror_url="http://mirrors.163.com/ubuntu/" ;;
-            5) mirror_url="https://repo.huaweicloud.com/ubuntu/" ;;
-            6) mirror_url="http://archive.ubuntu.com/ubuntu/" ;;
-            *) 
-                error "无效选择！"
-                sleep 2
-                continue
-                ;;
-        esac
-        
-        if ! show_yesno "确定要切换到 $mirror_url 吗？"; then
-            continue
-        fi
-        
-        # 备份原有源
-        cp /etc/apt/sources.list /etc/apt/sources.list.backup.$(date +%Y%m%d)
-        
-        # 获取系统版本
-        local ubuntu_version=$(lsb_release -cs)
-        
-        # 生成新的sources.list
-        cat > /etc/apt/sources.list << EOF
+change_mirror_source_gui() {
+    local current_source=$(grep -E "^deb " /etc/apt/sources.list | head -1 | grep -o "http[s]*://[^ ]*" || echo "官方源")
+    
+    show_msgbox "当前软件源" "当前软件源: $current_source\n\n是否切换到国内镜像源？"
+    
+    choice=$(dialog --title "选择镜像源" \
+                    --radiolist "请选择要使用的镜像源：" \
+                    12 50 5 \
+                    "1" "阿里云镜像源" on \
+                    "2" "清华大学镜像源" off \
+                    "3" "中科大镜像源" off \
+                    "4" "网易163镜像源" off \
+                    "5" "华为云镜像源" off \
+                    3>&1 1>&2 2>&3)
+    
+    if [ $? -ne 0 ] || [ -z "$choice" ]; then
+        return
+    fi
+    
+    local mirror_url=""
+    case $choice in
+        1) mirror_url="https://mirrors.aliyun.com/ubuntu/" ;;
+        2) mirror_url="https://mirrors.tuna.tsinghua.edu.cn/ubuntu/" ;;
+        3) mirror_url="https://mirrors.ustc.edu.cn/ubuntu/" ;;
+        4) mirror_url="http://mirrors.163.com/ubuntu/" ;;
+        5) mirror_url="https://repo.huaweicloud.com/ubuntu/" ;;
+    esac
+    
+    # 备份原有源
+    cp /etc/apt/sources.list /etc/apt/sources.list.backup.$(date +%Y%m%d)
+    
+    # 获取系统版本
+    local ubuntu_version=$(lsb_release -cs)
+    
+    # 生成新的sources.list
+    cat > /etc/apt/sources.list << EOF
 deb ${mirror_url} ${ubuntu_version} main restricted universe multiverse
 deb ${mirror_url} ${ubuntu_version}-security main restricted universe multiverse
 deb ${mirror_url} ${ubuntu_version}-updates main restricted universe multiverse
 deb ${mirror_url} ${ubuntu_version}-proposed main restricted universe multiverse
 deb ${mirror_url} ${ubuntu_version}-backports main restricted universe multiverse
 EOF
-        
-        echo -e "${BLUE}更新软件源...${NC}"
+    
+    # 更新软件源
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
         apt-get update -y
-        
-        log "已切换到镜像源: $mirror_url"
-        
-        if show_yesno "是否测试新源速度？"; then
-            echo -e "${BLUE}测试下载速度...${NC}"
-            time curl -I $mirror_url
-        fi
-        
-        read -p "按回车键继续..."
-        break
-    done
+        echo "100"
+        echo "# 软件源切换完成！"
+    ) | dialog --title "切换软件源" --gauge "正在更新软件包列表..." 8 60 0
+    
+    show_msgbox "完成" "软件源已切换到:\n$mirror_url\n\n请运行 apt-get update 测试速度"
+    log "切换到镜像源: $mirror_url"
 }
 
-install_tools_menu() {
-    show_header
-    echo -e "${CYAN}安装常用工具${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
+install_tools_gui() {
+    # 创建临时文件来存储选择
+    local temp_file=$(mktemp)
     
-    # 工具分类
-    local tools_list=()
-    local tools_selected=""
+    dialog --title "选择安装工具" \
+           --checklist "请选择要安装的工具：" \
+           20 60 12 \
+           "curl" "cURL工具" on \
+           "wget" "下载工具" on \
+           "vim" "文本编辑器" on \
+           "git" "版本控制工具" on \
+           "htop" "进程监控工具" on \
+           "iftop" "网络监控工具" off \
+           "iotop" "磁盘IO监控工具" off \
+           "build-essential" "开发工具包" off \
+           "python3" "Python 3" off \
+           "python3-pip" "Python包管理器" off \
+           "net-tools" "网络工具" on \
+           "dnsutils" "DNS工具" on \
+           "telnet" "远程登录工具" off \
+           "traceroute" "路由跟踪工具" off \
+           "zip" "压缩工具" on \
+           "unzip" "解压工具" on \
+           2> "$temp_file"
     
-    echo "选择要安装的工具（输入对应数字，多个用空格分隔）："
-    echo ""
-    
-    local tools=(
-        "curl wget vim git net-tools : 基础工具"
-        "htop iftop iotop nmon : 监控工具"
-        "build-essential gcc g++ make : 开发工具"
-        "python3 python3-pip python3-venv : Python环境"
-        "dnsutils telnet traceroute netcat : 网络工具"
-        "zip unzip p7zip-full rar unrar : 压缩工具"
-        "screen tmux byobu : 进程管理"
-        "tree ncdu jq bc : 其他实用工具"
-        "fail2ban rkhunter : 安全工具"
-        "docker.io docker-compose : 容器工具"
-    )
-    
-    local i=1
-    for tool in "${tools[@]}"; do
-        echo "  $i. ${tool#*:}"
-        tools_list[$i]="${tool%:*}"
-        ((i++))
-    done
-    
-    echo ""
-    echo "  0. 返回"
-    echo ""
-    
-    read -p "请选择: " selections
-    
-    if [[ "$selections" == "0" ]]; then
+    if [ $? -ne 0 ]; then
+        rm -f "$temp_file"
         return
     fi
     
-    for sel in $selections; do
-        if [[ "$sel" =~ ^[0-9]+$ ]] && [ "$sel" -ge 1 ] && [ "$sel" -le ${#tools_list[@]} ]; then
-            tools_selected+="${tools_list[$sel]} "
-        fi
-    done
+    local selected_tools=$(cat "$temp_file" | tr '\n' ' ')
+    rm -f "$temp_file"
     
-    if [ -n "$tools_selected" ]; then
-        echo -e "${BLUE}安装工具: $tools_selected${NC}"
-        apt-get install -y $tools_selected
-        log "工具安装完成: $tools_selected"
-    else
-        warn "未选择任何工具"
-    fi
-    
-    read -p "按回车键继续..."
-}
-
-security_hardening() {
-    show_header
-    echo -e "${CYAN}安全加固配置${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    if ! show_yesno "是否进行安全加固配置？"; then
+    if [ -z "$selected_tools" ]; then
+        show_msgbox "提示" "未选择任何工具"
         return
     fi
     
-    echo ""
+    if ! show_yesno "确认安装" "将安装以下工具：\n\n$selected_tools\n\n是否继续？"; then
+        return
+    fi
+    
+    (
+        echo "10"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "50"
+        echo "# 安装选择的工具..."
+        apt-get install -y $selected_tools
+        echo "100"
+        echo "# 工具安装完成！"
+    ) | dialog --title "安装工具" --gauge "正在安装工具..." 8 60 0
+    
+    show_msgbox "完成" "工具安装完成！"
+    log "安装工具: $selected_tools"
+}
+
+security_hardening_gui() {
+    if ! show_yesno "安全加固配置" "将进行以下安全加固：\n\n1. SSH安全配置\n2. 防火墙配置\n3. 安装Fail2ban\n\n是否继续？"; then
+        return
+    fi
     
     # SSH安全配置
-    if [ -f "/etc/ssh/sshd_config" ]; then
-        echo -e "${BLUE}SSH安全配置：${NC}"
-        
-        cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
-        
-        if show_yesno "  禁止root用户SSH登录？"; then
+    if show_yesno "SSH安全配置" "是否配置SSH安全设置？\n\n包括：\n• 禁止root登录\n• 修改默认端口\n• 其他安全选项"; then
+        if [ -f "/etc/ssh/sshd_config" ]; then
+            cp /etc/ssh/sshd_config /etc/ssh/sshd_config.backup.$(date +%Y%m%d)
+            
+            # 禁止root登录
             sed -i 's/#PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-            sed -i 's/PermitRootLogin yes/PermitRootLogin no/' /etc/ssh/sshd_config
-            echo "    ✓ 已禁止root用户SSH登录"
-        fi
-        
-        if show_yesno "  修改SSH端口（默认22）？"; then
-            local ssh_port
-            read -p "    请输入新的SSH端口 (1024-65535): " ssh_port
+            
+            # 修改端口
+            local ssh_port=$(show_input "SSH端口" "请输入新的SSH端口号（默认22）" "22")
             if [[ "$ssh_port" =~ ^[0-9]+$ ]] && [ "$ssh_port" -ge 1024 ] && [ "$ssh_port" -le 65535 ]; then
                 sed -i "s/#Port 22/Port $ssh_port/" /etc/ssh/sshd_config
-                sed -i "s/Port 22/Port $ssh_port/" /etc/ssh/sshd_config
-                echo "    ✓ SSH端口已修改为: $ssh_port"
             fi
+            
+            systemctl restart sshd
+            show_msgbox "SSH配置" "SSH安全配置完成！\n\n新端口: $ssh_port\nRoot登录: 已禁用"
         fi
-        
-        systemctl restart sshd
-        echo "    ✓ SSH服务已重启"
     fi
     
     # 防火墙配置
-    echo ""
-    echo -e "${BLUE}防火墙配置：${NC}"
-    if show_yesno "  启用UFW防火墙？"; then
+    if show_yesno "防火墙配置" "是否启用UFW防火墙？"; then
         ufw --force enable
         ufw default deny incoming
         ufw default allow outgoing
-        echo "    ✓ 防火墙已启用"
-        
-        if show_yesno "  是否允许SSH端口？"; then
-            ufw allow ssh
-            echo "    ✓ 已允许SSH端口"
-        fi
+        ufw allow ssh
+        show_msgbox "防火墙" "UFW防火墙已启用！\n\n默认策略：\n• 禁止所有入站连接\n• 允许所有出站连接\n• 允许SSH连接"
     fi
     
-    # Fail2ban安装
-    if show_yesno "  安装Fail2ban防暴力破解？"; then
+    # Fail2ban
+    if show_yesno "Fail2ban" "是否安装Fail2ban防暴力破解？"; then
         apt-get install -y fail2ban
         systemctl enable fail2ban
         systemctl start fail2ban
-        echo "    ✓ Fail2ban已安装并启动"
+        show_msgbox "Fail2ban" "Fail2ban安装完成并已启动！"
     fi
     
     log "安全加固配置完成"
-    read -p "按回车键继续..."
-}
-
-performance_tuning() {
-    show_header
-    echo -e "${CYAN}性能优化配置${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    if ! show_yesno "是否进行性能优化配置？"; then
-        return
-    fi
-    
-    echo ""
-    
-    # 内核参数优化
-    echo -e "${BLUE}内核参数优化：${NC}"
-    
-    cp /etc/sysctl.conf /etc/sysctl.conf.backup.$(date +%Y%m%d)
-    
-    cat >> /etc/sysctl.conf << 'EOF'
-
-# ===== 网络性能优化 =====
-net.core.rmem_max = 67108864
-net.core.wmem_max = 67108864
-net.ipv4.tcp_rmem = 4096 87380 67108864
-net.ipv4.tcp_wmem = 4096 65536 67108864
-net.ipv4.tcp_congestion_control = bbr
-net.ipv4.tcp_fastopen = 3
-net.core.default_qdisc = fq
-net.ipv4.tcp_tw_reuse = 1
-net.ipv4.tcp_fin_timeout = 30
-
-# ===== 系统性能优化 =====
-vm.swappiness = 10
-vm.vfs_cache_pressure = 50
-vm.dirty_ratio = 10
-vm.dirty_background_ratio = 5
-
-# ===== 安全优化 =====
-net.ipv4.tcp_syncookies = 1
-net.ipv4.tcp_max_syn_backlog = 1024
-EOF
-    
-    sysctl -p
-    echo "    ✓ 内核参数已优化"
-    
-    # 资源限制优化
-    echo ""
-    echo -e "${BLUE}资源限制优化：${NC}"
-    
-    cat >> /etc/security/limits.conf << 'EOF'
-
-* soft nofile 65536
-* hard nofile 65536
-* soft nproc 65536
-* hard nproc 65536
-root soft nofile 65536
-root hard nofile 65536
-EOF
-    
-    echo "    ✓ 资源限制已优化"
-    
-    # 禁用不需要的服务
-    echo ""
-    echo -e "${BLUE}服务优化：${NC}"
-    
-    if show_yesno "  禁用不需要的系统服务？"; then
-        systemctl disable bluetooth 2>/dev/null || true
-        systemctl disable cups 2>/dev/null || true
-        systemctl disable avahi-daemon 2>/dev/null || true
-        echo "    ✓ 已禁用不需要的服务"
-    fi
-    
-    log "性能优化配置完成"
-    read -p "按回车键继续..."
+    show_msgbox "完成" "安全加固配置完成！"
 }
 
 # ====================== Docker安装 ======================
 
-install_docker_menu() {
-    show_header
-    echo -e "${CYAN}安装Docker容器${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+install_docker_gui() {
     # 检查是否已安装
     if command -v docker &>/dev/null; then
-        local docker_version=$(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',')
-        echo -e "当前已安装: ${GREEN}Docker $docker_version${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装Docker？"; then
+        local docker_version=$(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',' || echo "未知版本")
+        if ! show_yesno "Docker已安装" "Docker已经安装：\n版本: $docker_version\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装Docker容器引擎？"; then
+    if ! show_yesno "安装Docker" "将安装Docker容器引擎\n\n安装后会自动配置镜像加速器\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}开始安装Docker...${NC}"
-    echo ""
-    
-    # 卸载旧版本
-    echo "1. 卸载旧版本Docker..."
-    apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null
-    
-    # 安装依赖
-    echo "2. 安装依赖包..."
-    apt-get update -y
-    apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
-    
-    # 添加Docker官方GPG密钥
-    echo "3. 添加Docker官方GPG密钥..."
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    
-    # 添加Docker仓库
-    echo "4. 添加Docker仓库..."
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    
-    # 安装Docker
-    echo "5. 安装Docker..."
-    apt-get update -y
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-    
-    # 启动Docker
-    echo "6. 启动Docker服务..."
-    systemctl start docker
-    systemctl enable docker
+    (
+        echo "10"
+        echo "# 卸载旧版本..."
+        apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null
+        echo "20"
+        echo "# 安装依赖..."
+        apt-get update -y
+        apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release
+        echo "40"
+        echo "# 添加Docker GPG密钥..."
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+        echo "60"
+        echo "# 添加Docker仓库..."
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+        echo "80"
+        echo "# 安装Docker..."
+        apt-get update -y
+        apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+        echo "90"
+        echo "# 启动Docker服务..."
+        systemctl start docker
+        systemctl enable docker
+        echo "100"
+        echo "# Docker安装完成！"
+    ) | dialog --title "安装Docker" --gauge "正在安装Docker..." 10 70 0
     
     # 配置镜像加速器
-    echo "7. 配置镜像加速器..."
-    mkdir -p /etc/docker
-    cat > /etc/docker/daemon.json << 'EOF'
+    if show_yesno "镜像加速器" "是否配置Docker镜像加速器？"; then
+        mkdir -p /etc/docker
+        cat > /etc/docker/daemon.json << 'EOF'
 {
   "registry-mirrors": [
     "https://docker.mirrors.ustc.edu.cn",
@@ -614,568 +475,338 @@ install_docker_menu() {
   ]
 }
 EOF
-    systemctl restart docker
-    
-    # 测试安装
-    echo "8. 测试Docker安装..."
-    if docker run --rm hello-world &>/dev/null; then
-        echo -e "   ${GREEN}✓ Docker安装成功！${NC}"
-        log "Docker安装成功"
-    else
-        echo -e "   ${YELLOW}⚠ Docker安装完成，但测试失败${NC}"
-        warn "Docker测试失败"
+        systemctl restart docker
     fi
     
-    echo ""
-    echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}                          Docker安装完成！${NC}"
-    echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
+    # 测试Docker
+    if docker run --rm hello-world &>/dev/null; then
+        show_msgbox "成功" "✅ Docker安装成功！\n\n版本: $(docker --version 2>/dev/null)\n\n可以使用docker命令管理容器"
+    else
+        show_msgbox "警告" "⚠ Docker安装完成，但测试失败\n\n请检查服务状态：systemctl status docker"
+    fi
     
-    read -p "按回车键继续..."
+    log "Docker安装完成"
 }
 
 # ====================== 面板安装 ======================
 
-install_1panel_menu() {
-    show_header
-    echo -e "${CYAN}安装1Panel面板${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    # 检查是否已安装
+install_1panel_gui() {
     if systemctl list-unit-files | grep -q 1panel || command -v 1pctl &>/dev/null; then
-        echo -e "当前已安装: ${GREEN}1Panel面板${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装1Panel？"; then
+        if ! show_yesno "1Panel已安装" "1Panel面板已经安装！\n\n是否重新安装？"; then
             return
         fi
-        
-        # 卸载现有版本
-        echo "卸载现有1Panel..."
-        systemctl stop 1panel 2>/dev/null || true
-        rm -rf /opt/1panel
-        rm -rf /usr/local/bin/1panel
     fi
     
-    if ! show_yesno "是否安装1Panel服务器面板？"; then
+    if ! show_yesno "安装1Panel" "将安装1Panel服务器面板\n\n默认端口: 9090\n用户名: admin\n\n安装过程中需要设置密码\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}开始安装1Panel...${NC}"
-    echo ""
-    echo "安装说明："
-    echo "  1. 安装过程中需要您输入 'y' 确认"
-    echo "  2. 需要设置面板访问密码"
-    echo "  3. 默认访问地址: https://服务器IP:9090"
-    echo "  4. 用户名: admin"
-    echo ""
-    
-    read -p "按回车键开始安装（按Ctrl+C取消）..."
+    show_msgbox "安装提示" "安装步骤说明：\n\n1. 当提示 'Please enter y or n:' 时，请输入 y\n2. 设置面板密码（输入两次）\n3. 等待安装完成\n\n按确定开始安装"
     
     # 安装1Panel
-    curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh
-    chmod +x quick_start.sh
+    (
+        echo "30"
+        echo "# 下载安装脚本..."
+        curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o /tmp/quick_start.sh
+        echo "60"
+        echo "# 运行安装脚本..."
+        chmod +x /tmp/quick_start.sh
+        echo "90"
+        echo "# 安装中，请按照提示操作..."
+        echo "100"
+        echo "# 安装完成！"
+    ) | dialog --title "安装1Panel" --gauge "正在安装1Panel..." 8 60 0
     
-    echo ""
-    echo -e "${YELLOW}请按照以下步骤操作：${NC}"
-    echo "  1. 当提示 'Please enter y or n:' 时，请输入 y"
-    echo "  2. 设置面板密码（输入两次）"
-    echo "  3. 等待安装完成"
-    echo ""
+    # 在后台运行安装
+    bash /tmp/quick_start.sh &
     
-    # 运行安装脚本
-    ./quick_start.sh
+    # 等待并获取结果
+    sleep 10
     
-    # 清理临时文件
-    rm -f quick_start.sh
-    
-    # 检查安装结果
-    sleep 5
     if systemctl list-unit-files | grep -q 1panel; then
         local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
-        echo ""
-        echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}                         1Panel安装完成！${NC}"
-        echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "${YELLOW}访问地址: https://${ip_address}:9090${NC}"
-        echo -e "${YELLOW}用户名: admin${NC}"
-        echo -e "${YELLOW}密码: 您刚才设置的密码${NC}"
-        echo ""
-        echo -e "${RED}⚠ 重要：请立即登录并修改默认密码！${NC}"
-        
+        show_msgbox "成功" "✅ 1Panel安装成功！\n\n访问地址: https://${ip_address}:9090\n用户名: admin\n密码: 您刚才设置的密码\n\n请及时登录并修改密码"
         log "1Panel安装完成"
     else
-        error "1Panel安装失败！"
+        show_msgbox "错误" "❌ 1Panel安装失败！\n\n请检查网络连接或手动安装"
     fi
     
-    read -p "按回车键继续..."
+    rm -f /tmp/quick_start.sh
 }
 
-install_baota_menu() {
-    show_header
-    echo -e "${CYAN}安装宝塔面板${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    # 检查是否已安装
+install_baota_gui() {
     if [ -f "/etc/init.d/bt" ]; then
-        echo -e "当前已安装: ${GREEN}宝塔面板${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装宝塔？"; then
+        if ! show_yesno "宝塔已安装" "宝塔面板已经安装！\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装宝塔Linux面板？"; then
+    if ! show_yesno "安装宝塔" "将安装宝塔Linux面板\n\n默认端口: 8888\n\n安装过程需要5-10分钟\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}开始安装宝塔面板...${NC}"
-    echo ""
-    echo "安装说明："
-    echo "  1. 安装过程需要5-10分钟"
-    echo "  2. 安装过程中需要您输入 'y' 确认"
-    echo "  3. 安装完成后会显示登录信息"
-    echo "  4. 请保存显示的登录信息"
-    echo "  5. 默认访问地址: http://服务器IP:8888"
-    echo ""
-    
-    read -p "按回车键开始安装（按Ctrl+C取消）..."
+    show_msgbox "安装提示" "安装步骤说明：\n\n1. 当提示确认时，请输入 y\n2. 等待安装完成\n3. 保存显示的登录信息\n\n按确定开始安装"
     
     # 安装宝塔
-    if command -v curl &>/dev/null; then
-        curl -sSO https://download.bt.cn/install/install_panel.sh
-    else
-        wget -O install_panel.sh https://download.bt.cn/install/install_panel.sh
-    fi
+    (
+        echo "30"
+        echo "# 下载安装脚本..."
+        if command -v curl &>/dev/null; then
+            curl -sSO https://download.bt.cn/install/install_panel.sh
+        else
+            wget -q https://download.bt.cn/install/install_panel.sh
+        fi
+        echo "70"
+        echo "# 运行安装脚本..."
+        echo "100"
+        echo "# 安装中，请稍候..."
+    ) | dialog --title "安装宝塔" --gauge "正在安装宝塔面板..." 8 60 0
     
-    echo ""
-    echo -e "${YELLOW}请按照以下步骤操作：${NC}"
-    echo "  1. 当提示确认时，请输入 y"
-    echo "  2. 等待安装完成"
-    echo "  3. 保存显示的登录信息"
-    echo ""
+    # 在后台运行安装
+    bash install_panel.sh &
     
-    # 运行安装脚本
-    bash install_panel.sh
+    # 等待
+    sleep 10
     
-    # 检查安装结果
-    sleep 5
     if [ -f "/etc/init.d/bt" ]; then
         local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null)
-        echo ""
-        echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo -e "${GREEN}                         宝塔面板安装完成！${NC}"
-        echo -e "${GREEN}══════════════════════════════════════════════════════════════════════════════${NC}"
-        echo ""
-        echo -e "${YELLOW}访问地址: http://${ip_address}:8888${NC}"
-        echo -e "${YELLOW}请查看屏幕上显示的登录信息${NC}"
-        echo ""
-        
+        show_msgbox "成功" "✅ 宝塔面板安装完成！\n\n访问地址: http://${ip_address}:8888\n\n请查看屏幕输出或运行 'bt default' 获取登录信息"
         log "宝塔面板安装完成"
     else
-        error "宝塔面板安装失败！"
+        show_msgbox "错误" "❌ 宝塔面板安装失败！\n\n请检查网络连接或手动安装"
     fi
-    
-    read -p "按回车键继续..."
 }
 
 # ====================== Web服务器安装 ======================
 
 install_web_menu() {
     while true; do
-        choice=$(show_menu "安装Web服务器" \
-            "安装Nginx" \
-            "安装Apache2" \
-            "安装OpenLiteSpeed" \
-            "返回主菜单")
+        choice=$(dialog --title "安装Web服务器" \
+                        --menu "请选择要安装的Web服务器：" \
+                        12 50 4 \
+                        "1" "安装Nginx" \
+                        "2" "安装Apache2" \
+                        "3" "安装OpenLiteSpeed" \
+                        "4" "返回" \
+                        3>&1 1>&2 2>&3)
+        
+        if [ $? -ne 0 ]; then
+            return
+        fi
         
         case $choice in
-            1) install_nginx ;;
-            2) install_apache ;;
-            3) install_openlitespeed ;;
+            1) install_nginx_gui ;;
+            2) install_apache_gui ;;
+            3) install_openlitespeed_gui ;;
             4) return ;;
-            0) return ;;
         esac
     done
 }
 
-install_nginx() {
-    show_header
-    echo -e "${CYAN}安装Nginx${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+install_nginx_gui() {
     if command -v nginx &>/dev/null; then
-        local nginx_version=$(nginx -v 2>&1 | cut -d'/' -f2)
-        echo -e "当前已安装: ${GREEN}Nginx $nginx_version${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装Nginx？"; then
+        if ! show_yesno "Nginx已安装" "Nginx已经安装！\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装Nginx Web服务器？"; then
+    if ! show_yesno "安装Nginx" "将安装Nginx Web服务器\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}安装Nginx...${NC}"
-    apt-get update -y
-    apt-get install -y nginx
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "70"
+        echo "# 安装Nginx..."
+        apt-get install -y nginx
+        echo "90"
+        echo "# 启动Nginx服务..."
+        systemctl enable nginx
+        systemctl start nginx
+        echo "100"
+        echo "# Nginx安装完成！"
+    ) | dialog --title "安装Nginx" --gauge "正在安装Nginx..." 8 60 0
     
-    systemctl enable nginx
-    systemctl start nginx
-    
-    echo ""
-    echo -e "${GREEN}✓ Nginx安装完成！${NC}"
-    echo ""
-    echo -e "${YELLOW}默认网站目录: /var/www/html${NC}"
-    echo -e "${YELLOW}配置文件目录: /etc/nginx${NC}"
-    echo -e "${YELLOW}访问地址: http://服务器IP${NC}"
-    
+    show_msgbox "完成" "✅ Nginx安装成功！\n\n默认网站目录: /var/www/html\n配置文件目录: /etc/nginx\n访问地址: http://服务器IP"
     log "Nginx安装完成"
-    read -p "按回车键继续..."
 }
 
-install_apache() {
-    show_header
-    echo -e "${CYAN}安装Apache2${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+install_apache_gui() {
     if command -v apache2 &>/dev/null; then
-        local apache_version=$(apache2 -v | grep "Server version" | cut -d'/' -f2)
-        echo -e "当前已安装: ${GREEN}Apache $apache_version${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装Apache2？"; then
+        if ! show_yesno "Apache已安装" "Apache已经安装！\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装Apache2 Web服务器？"; then
+    if ! show_yesno "安装Apache" "将安装Apache2 Web服务器\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}安装Apache2...${NC}"
-    apt-get update -y
-    apt-get install -y apache2
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "70"
+        echo "# 安装Apache2..."
+        apt-get install -y apache2
+        echo "90"
+        echo "# 启动Apache服务..."
+        systemctl enable apache2
+        systemctl start apache2
+        echo "100"
+        echo "# Apache安装完成！"
+    ) | dialog --title "安装Apache" --gauge "正在安装Apache..." 8 60 0
     
-    systemctl enable apache2
-    systemctl start apache2
-    
-    echo ""
-    echo -e "${GREEN}✓ Apache2安装完成！${NC}"
-    echo ""
-    echo -e "${YELLOW}默认网站目录: /var/www/html${NC}"
-    echo -e "${YELLOW}配置文件目录: /etc/apache2${NC}"
-    echo -e "${YELLOW}访问地址: http://服务器IP${NC}"
-    
-    log "Apache2安装完成"
-    read -p "按回车键继续..."
+    show_msgbox "完成" "✅ Apache2安装成功！\n\n默认网站目录: /var/www/html\n配置文件目录: /etc/apache2\n访问地址: http://服务器IP"
+    log "Apache安装完成"
 }
 
 # ====================== 数据库安装 ======================
 
 install_database_menu() {
     while true; do
-        choice=$(show_menu "安装数据库" \
-            "安装MySQL" \
-            "安装MariaDB" \
-            "安装PostgreSQL" \
-            "安装Redis" \
-            "安装MongoDB" \
-            "返回主菜单")
+        choice=$(dialog --title "安装数据库" \
+                        --menu "请选择要安装的数据库：" \
+                        15 50 7 \
+                        "1" "安装MySQL" \
+                        "2" "安装MariaDB" \
+                        "3" "安装PostgreSQL" \
+                        "4" "安装Redis" \
+                        "5" "安装MongoDB" \
+                        "6" "返回" \
+                        3>&1 1>&2 2>&3)
+        
+        if [ $? -ne 0 ]; then
+            return
+        fi
         
         case $choice in
-            1) install_mysql ;;
-            2) install_mariadb ;;
-            3) install_postgresql ;;
-            4) install_redis ;;
-            5) install_mongodb ;;
+            1) install_mysql_gui ;;
+            2) install_mariadb_gui ;;
+            3) install_postgresql_gui ;;
+            4) install_redis_gui ;;
+            5) install_mongodb_gui ;;
             6) return ;;
-            0) return ;;
         esac
     done
 }
 
-install_mysql() {
-    show_header
-    echo -e "${CYAN}安装MySQL${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+install_mysql_gui() {
     if command -v mysql &>/dev/null; then
-        echo -e "当前已安装: ${GREEN}MySQL${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装MySQL？"; then
+        if ! show_yesno "MySQL已安装" "MySQL已经安装！\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装MySQL数据库？"; then
+    if ! show_yesno "安装MySQL" "将安装MySQL数据库服务器\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}安装MySQL...${NC}"
-    apt-get update -y
-    apt-get install -y mysql-server
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "70"
+        echo "# 安装MySQL..."
+        apt-get install -y mysql-server
+        echo "90"
+        echo "# 启动MySQL服务..."
+        systemctl enable mysql
+        systemctl start mysql
+        echo "100"
+        echo "# MySQL安装完成！"
+    ) | dialog --title "安装MySQL" --gauge "正在安装MySQL..." 8 60 0
     
-    systemctl enable mysql
-    systemctl start mysql
-    
-    # 运行安全脚本
-    echo ""
-    if show_yesno "是否运行MySQL安全配置脚本？"; then
-        mysql_secure_installation
-    fi
-    
-    echo ""
-    echo -e "${GREEN}✓ MySQL安装完成！${NC}"
-    echo ""
-    echo -e "${YELLOW}配置文件: /etc/mysql/mysql.conf.d/mysqld.cnf${NC}"
-    echo -e "${YELLOW}数据目录: /var/lib/mysql${NC}"
-    echo -e "${YELLOW}默认端口: 3306${NC}"
-    
+    show_msgbox "完成" "✅ MySQL安装成功！\n\n默认端口: 3306\n配置文件: /etc/mysql/mysql.conf.d/mysqld.cnf\n数据目录: /var/lib/mysql"
     log "MySQL安装完成"
-    read -p "按回车键继续..."
+    
+    if show_yesno "安全配置" "是否运行MySQL安全配置脚本？"; then
+        mysql_secure_installation
+    fi
 }
 
-install_mariadb() {
-    show_header
-    echo -e "${CYAN}安装MariaDB${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+install_mariadb_gui() {
     if command -v mariadb &>/dev/null; then
-        echo -e "当前已安装: ${GREEN}MariaDB${NC}"
-        echo ""
-        
-        if ! show_yesno "是否重新安装MariaDB？"; then
+        if ! show_yesno "MariaDB已安装" "MariaDB已经安装！\n\n是否重新安装？"; then
             return
         fi
     fi
     
-    if ! show_yesno "是否安装MariaDB数据库？"; then
+    if ! show_yesno "安装MariaDB" "将安装MariaDB数据库服务器\n\n是否继续？"; then
         return
     fi
     
-    echo ""
-    echo -e "${BLUE}安装MariaDB...${NC}"
-    apt-get update -y
-    apt-get install -y mariadb-server
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "70"
+        echo "# 安装MariaDB..."
+        apt-get install -y mariadb-server
+        echo "90"
+        echo "# 启动MariaDB服务..."
+        systemctl enable mariadb
+        systemctl start mariadb
+        echo "100"
+        echo "# MariaDB安装完成！"
+    ) | dialog --title "安装MariaDB" --gauge "正在安装MariaDB..." 8 60 0
     
-    systemctl enable mariadb
-    systemctl start mariadb
+    show_msgbox "完成" "✅ MariaDB安装成功！\n\n默认端口: 3306\n配置文件: /etc/mysql/mariadb.conf.d/50-server.cnf\n数据目录: /var/lib/mysql"
+    log "MariaDB安装完成"
     
-    # 运行安全脚本
-    echo ""
-    if show_yesno "是否运行MariaDB安全配置脚本？"; then
+    if show_yesno "安全配置" "是否运行MariaDB安全配置脚本？"; then
         mysql_secure_installation
     fi
-    
-    echo ""
-    echo -e "${GREEN}✓ MariaDB安装完成！${NC}"
-    echo ""
-    echo -e "${YELLOW}配置文件: /etc/mysql/mariadb.conf.d/50-server.cnf${NC}"
-    echo -e "${YELLOW}数据目录: /var/lib/mysql${NC}"
-    echo -e "${YELLOW}默认端口: 3306${NC}"
-    
-    log "MariaDB安装完成"
-    read -p "按回车键继续..."
 }
 
-# ====================== 服务管理 ======================
-
-service_management_menu() {
-    while true; do
-        choice=$(show_menu "服务管理" \
-            "查看服务状态" \
-            "启动服务" \
-            "停止服务" \
-            "重启服务" \
-            "设置开机自启" \
-            "查看服务日志" \
-            "返回主菜单")
-        
-        case $choice in
-            1) show_service_status ;;
-            2) start_service ;;
-            3) stop_service ;;
-            4) restart_service ;;
-            5) enable_service ;;
-            6) show_service_logs ;;
-            7) return ;;
-            0) return ;;
-        esac
-    done
-}
-
-show_service_status() {
-    show_header
-    echo -e "${CYAN}服务状态${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    local services=(
-        "docker" "Docker"
-        "1panel" "1Panel"
-        "nginx" "Nginx"
-        "apache2" "Apache"
-        "mysql" "MySQL"
-        "mariadb" "MariaDB"
-        "postgresql" "PostgreSQL"
-        "redis" "Redis"
-        "ssh" "SSH"
-        "chronyd" "时间同步"
-        "ufw" "防火墙"
-    )
-    
-    for ((i=0; i<${#services[@]}; i+=2)); do
-        local service="${services[i]}"
-        local name="${services[i+1]}"
-        
-        if systemctl list-unit-files | grep -q "${service}.service"; then
-            if systemctl is-active --quiet "$service" 2>/dev/null; then
-                echo -e "  ${GREEN}✓ $name: 运行中${NC}"
-            else
-                echo -e "  ${YELLOW}⚠ $name: 已停止${NC}"
-            fi
-        else
-            echo -e "  ${BLUE}○ $name: 未安装${NC}"
+install_redis_gui() {
+    if command -v redis-server &>/dev/null; then
+        if ! show_yesno "Redis已安装" "Redis已经安装！\n\n是否重新安装？"; then
+            return
         fi
-    done
+    fi
     
-    echo ""
-    echo -e "${BLUE}端口监听状态：${NC}"
-    local ports=(22 80 443 3306 5432 6379 9090 8888)
-    for port in "${ports[@]}"; do
-        if ss -tulpn | grep -q ":$port "; then
-            echo -e "  ${GREEN}✓ 端口 $port: 已监听${NC}"
-        else
-            echo -e "  ${YELLOW}⚠ 端口 $port: 未监听${NC}"
-        fi
-    done
-    
-    read -p "按回车键继续..."
-}
-
-start_service() {
-    show_header
-    echo -e "${CYAN}启动服务${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    echo "可管理的服务："
-    systemctl list-unit-files --type=service | grep -E "(docker|nginx|apache|mysql|mariadb|postgresql|redis|ssh|chrony)" | awk '{print "  " $1}'
-    echo ""
-    
-    read -p "请输入要启动的服务名称: " service
-    
-    if [ -z "$service" ]; then
-        error "服务名称不能为空"
-        sleep 2
+    if ! show_yesno "安装Redis" "将安装Redis内存数据库\n\n是否继续？"; then
         return
     fi
     
-    echo -e "${BLUE}启动 $service...${NC}"
-    systemctl start "$service" 2>/dev/null
+    (
+        echo "30"
+        echo "# 更新软件包列表..."
+        apt-get update -y
+        echo "70"
+        echo "# 安装Redis..."
+        apt-get install -y redis-server
+        echo "90"
+        echo "# 启动Redis服务..."
+        systemctl enable redis-server
+        systemctl start redis-server
+        echo "100"
+        echo "# Redis安装完成！"
+    ) | dialog --title "安装Redis" --gauge "正在安装Redis..." 8 60 0
     
-    if systemctl is-active --quiet "$service"; then
-        echo -e "${GREEN}✓ $service 启动成功${NC}"
-    else
-        error "$service 启动失败"
-    fi
-    
-    read -p "按回车键继续..."
-}
-
-# ====================== 系统监控 ======================
-
-system_monitor_menu() {
-    while true; do
-        choice=$(show_menu "系统监控" \
-            "查看系统资源" \
-            "查看进程列表" \
-            "查看磁盘使用" \
-            "查看网络连接" \
-            "查看系统日志" \
-            "性能测试" \
-            "返回主菜单")
-        
-        case $choice in
-            1) show_system_resources ;;
-            2) show_process_list ;;
-            3) show_disk_usage ;;
-            4) show_network_connections ;;
-            5) show_system_logs ;;
-            6) performance_test ;;
-            7) return ;;
-            0) return ;;
-        esac
-    done
-}
-
-show_system_resources() {
-    show_header
-    echo -e "${CYAN}系统资源使用${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    echo -e "${BLUE}CPU使用率：${NC}"
-    echo "  $(top -bn1 | grep "Cpu(s)" | awk '{print $2}')%"
-    
-    echo -e "${BLUE}内存使用：${NC}"
-    free -h | awk '/^Mem:/ {print "  总量: " $2, "已用: " $3, "剩余: " $4}'
-    
-    echo -e "${BLUE}磁盘使用：${NC}"
-    df -h / | awk 'NR==2 {print "  总量: " $2, "已用: " $3, "剩余: " $4, "使用率: " $5}'
-    
-    echo -e "${BLUE}系统负载：${NC}"
-    uptime | awk -F': ' '{print $2}'
-    
-    echo -e "${BLUE}运行时间：${NC}"
-    uptime -p
-    
-    read -p "按回车键继续..."
+    show_msgbox "完成" "✅ Redis安装成功！\n\n默认端口: 6379\n配置文件: /etc/redis/redis.conf\n数据目录: /var/lib/redis"
+    log "Redis安装完成"
 }
 
 # ====================== 其他功能 ======================
 
-show_log_menu() {
-    show_header
-    echo -e "${CYAN}查看日志${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
+show_log_gui() {
     if [ -f "$INSTALL_LOG" ]; then
-        echo -e "${BLUE}安装日志 (最后50行)：${NC}"
-        echo "────────────────────────────────────────────────────────────────────────────────"
-        tail -50 "$INSTALL_LOG"
-        echo "────────────────────────────────────────────────────────────────────────────────"
-        
-        echo ""
-        if show_yesno "是否查看完整日志？"; then
-            less "$INSTALL_LOG"
-        fi
+        dialog --title "安装日志" \
+               --textbox "$INSTALL_LOG" \
+               25 80
     else
-        error "日志文件不存在"
+        show_msgbox "错误" "日志文件不存在"
     fi
-    
-    read -p "按回车键继续..."
 }
 
 exit_program() {
-    show_header
-    echo -e "${CYAN}退出程序${NC}"
-    echo "══════════════════════════════════════════════════════════════════════════════"
-    
-    if show_yesno "确定要退出吗？"; then
-        echo ""
+    if show_yesno "退出程序" "确定要退出吗？"; then
         echo -e "${GREEN}感谢使用服务器部署工具！${NC}"
         echo -e "${YELLOW}日志文件: $INSTALL_LOG${NC}"
-        echo ""
-        fix_terminal
         exit 0
     fi
 }
@@ -1183,23 +814,25 @@ exit_program() {
 # ====================== 主程序 ======================
 
 main() {
-    # 初始化
+    # 检查root权限
+    check_root
+    
+    # 初始化日志系统
     init_log_system
     log "脚本开始执行 v$SCRIPT_VERSION"
     
-    # 检查权限
-    if [[ $EUID -ne 0 ]]; then
-        echo -e "${RED}请使用root权限运行此脚本${NC}"
-        echo "使用: sudo bash $0"
-        exit 1
-    fi
+    # 检查并安装dialog
+    check_dialog
     
-    # 设置信号处理
-    trap 'echo -e "\n${RED}脚本被中断${NC}"; fix_terminal; exit 1' INT TERM
+    # 显示欢迎界面
+    show_welcome
     
     # 显示主菜单
-    main_menu
+    show_main_menu
 }
+
+# 设置中断处理
+trap 'echo -e "\n${RED}脚本被中断${NC}"; exit 1' INT TERM
 
 # 启动程序
 main "$@"
