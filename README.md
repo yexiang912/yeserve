@@ -12,21 +12,20 @@
 **定位**：快速入门，基础功能
 ```bash
 # 一键拉取运行（yx原创界面）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
-```
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
 
 ### 2. **GUI增强版 - `serveui.sh`**
 **定位**：完整功能，最佳体验
 ```bash
 # 一键拉取运行（yx原创完整UI）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
 ```
 
 ### 3. **专业版 - `pro.sh`**
 **定位**：高级功能，需要授权
 ```bash
 # 一键拉取运行（yx原创Pro版）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
 ```
 
 ## 🖥️ 界面特色（yx原创设计）
@@ -46,27 +45,21 @@ bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/
 ```bash
 # 选择你需要的版本直接运行
 # 基础版：简洁快速
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
 
 # GUI版：功能完整
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
 
 # Pro版：专业功能（需密钥）
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
 ```
 
-### 方式二：批量体验
 
-```bash
-# 按顺序体验所有版本
-bash -c "curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh | bash"
-bash -c "curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh | bash"
-bash -c "curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh | bash"
 ```
 
 ## 🔧 技术特点（yx原创实现）
 
-### 1. **原创GUI框架**
+### 1. **GUI框架**
 - 基于 `dialog` 的自定义界面框架
 - 统一的界面风格和操作逻辑
 - 智能的终端状态恢复机制
@@ -116,7 +109,7 @@ yeserve/ (yx原创项目)
 2. Pro版本需要授权密钥
 3. 建议在测试环境先体验
 4. 使用前请备份重要数据
-
+5.
 ---
 
 **版权声明**：本项目所有代码、界面设计和功能实现均为 **yx** 原创，保留所有权利。
