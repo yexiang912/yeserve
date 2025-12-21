@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# Ubuntu 服务器一键部署脚本 (Pro版本 v7.0)
+# Ubuntu 服务器一键部署脚本  改名字四亩 (Pro版本 v7.0)
 # 需要密钥验证
 # =============================================
 
@@ -76,7 +76,7 @@ validate_license() {
     fi
     
     echo -e "${GREEN}✅ 密钥验证成功！${NC}"
-    echo -e "${BLUE}欢迎使用 Pro 版本！${NC}"
+    echo -e "${BLUE}欢迎使用 Pro 版本 yx原创！${NC}"
     echo ""
     sleep 2
 }
@@ -147,7 +147,7 @@ check_status() {
     fi
 }
 
-# ====================== GUI函数 ======================
+# ====================== GUI函数 yx原创 ======================
 
 check_dialog() {
     if ! command -v dialog >/dev/null 2>&1; then
@@ -165,12 +165,12 @@ check_dialog() {
 show_gui() {
     local title="$1"
     shift
-    # 保存当前stty设置
+    # 保存当前stty设置yx原创
     local old_stty=$(stty -g)
     # 执行dialog命令
     dialog --backtitle "$DIALOG_TITLE" --title "$title" "$@" 2>&1 >/dev/tty
     local result=$?
-    # 恢复stty设置
+    # 恢复stty设置yx原创
     stty $old_stty
     echo $result
 }
@@ -263,7 +263,7 @@ exit_to_terminal() {
     clear
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${GREEN}正在退出GUI界面，进入终端模式${NC}"
-    echo -e "${YELLOW}操作完成后会自动返回GUI界面${NC}"
+    echo -e "${YELLOW}操作完成后会自动返回GUI界面 yx原创${NC}"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo ""
 }
@@ -271,7 +271,7 @@ exit_to_terminal() {
 return_to_gui() {
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}操作完成！按回车键返回GUI界面...${NC}"
+    echo -e "${GREEN}操作完成！按回车键返回GUI界面... yx原创${NC}"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     read -p ""
 }
@@ -292,7 +292,7 @@ check_network() {
             warn "无法访问: $url"
         fi
     done
-    log "网络检查完成"
+    log "网络检查完成 yx原创"
 }
 
 check_disk_space() {
@@ -303,7 +303,7 @@ check_disk_space() {
     local free_space=$(df -BG / | awk 'NR==2 {print $4}' | sed 's/G//' 2>/dev/null || echo "0")
     
     if [ "$free_space" -lt "$min_space" ]; then
-        error "磁盘空间不足！当前剩余: ${free_space}GB，需要至少: ${min_space}GB"
+        error "磁盘空间不足！yx原创 当前剩余: ${free_space}GB，需要至少: ${min_space}GB"
         return 1
     fi
     
@@ -734,7 +734,7 @@ install_java() {
 }
 
 install_python() {
-    info "安装Python环境..."
+    info "安装Python环境...yx原创"
     
     apt-get install -y python3 python3-pip python3-venv
     
@@ -862,7 +862,7 @@ execute_deployment_plan() {
 
 server_deployment_menu() {
     while true; do
-        choice=$(show_gui_menu "服务器部署方案" 15 60 7 \
+        choice=$(show_gui_menu "服务器部署方案 yx原创" 15 60 7 \
                   "1" "选择服务器类型部署" \
                   "2" "自定义软件包部署" \
                   "3" "仅安装控制面板" \
@@ -1487,7 +1487,7 @@ setup_timezone_gui() {
     timedatectl set-timezone Asia/Shanghai
     check_status "时区设置成功" "时区设置失败"
     
-    info "配置时间同步服务..."
+    info "配置时间同步服务...yx原创"
     systemctl stop systemd-timesyncd 2>/dev/null || true
     systemctl disable systemd-timesyncd 2>/dev/null || true
     systemctl enable chronyd
@@ -1526,7 +1526,7 @@ optimize_kernel_gui() {
     info "优化内核参数..."
     
     cat >> /etc/sysctl.conf << 'EOF'
-# 网络优化
+# 网络优化yx原创
 net.core.rmem_max = 67108864
 net.core.wmem_max = 67108864
 net.ipv4.tcp_rmem = 4096 87380 67108864
@@ -1676,7 +1676,7 @@ EOF
     
     echo ""
     echo -e "${GREEN}══════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}          系统一键优化完成！${NC}"
+    echo -e "${GREEN}          系统一键优化完成！yx原创${NC}"
     echo -e "${GREEN}══════════════════════════════════════════════${NC}"
     
     return_to_gui
@@ -1743,7 +1743,7 @@ EOF
         if docker run --rm hello-world &>/dev/null; then
             success "✅ Docker测试成功！"
         else
-            warn "⚠ Docker测试失败，但Docker已安装"
+            warn "⚠ Docker测试失败，但Docker已安装yx原"
         fi
         
         echo ""
@@ -2244,7 +2244,7 @@ confirm_execution_gui() {
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║                                                          ║"
     echo "║        Ubuntu 服务器部署脚本 Pro版 v$SCRIPT_VERSION       ║"
-    echo "║             专业服务器部署方案管理器                     ║"
+    echo "║             专业服务器部署方案管理器   yx原创                   ║"
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
@@ -2261,7 +2261,7 @@ confirm_execution_gui() {
     echo ""
     
     echo -e "${YELLOW}⚠  警告：本脚本将修改系统配置并安装软件${NC}"
-    echo -e "${YELLOW}请确保您已经备份重要数据${NC}"
+    echo -e "${YELLOW}请确保您已经备份重要数据  yx原创${NC}"
     echo ""
     echo -e "${CYAN}日志文件: ${INSTALL_LOG}${NC}"
     echo -e "${CYAN}备份目录: ${BACKUP_DIR}${NC}"
@@ -2270,7 +2270,7 @@ confirm_execution_gui() {
     check_disk_space
     check_network
     
-    read -p "按回车键进入主菜单，或按 Ctrl+C 退出..." 
+    read -p "按回车键进入主菜单，或按 Ctrl+C 退出...yx原创" 
 }
 
 main() {
