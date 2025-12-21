@@ -1,9 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# Ubuntu 服务器一键部署脚本 (完整自启动版 v5.7)
-# 作者: yx原创
-# 版本: 5.7 (完整启动器功能，包含所有函数)
+# Ubuntu 服务器一键部署脚本 (优化版 v6.0)
 # =============================================
 
 # 颜色定义
@@ -14,20 +12,18 @@ BLUE='\033[0;34m'
 PURPLE='\033[0;35m'
 CYAN='\033[0;36m'
 WHITE='\033[1;37m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 
 # 全局变量
-SCRIPT_VERSION="5.7"
+SCRIPT_VERSION="6.0"
 SCRIPT_NAME="yx-deploy"
 BACKUP_DIR="/backup/${SCRIPT_NAME}"
 LOG_DIR="/var/log/${SCRIPT_NAME}"
 INSTALL_LOG="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
-SELECTED_PACKAGES=()
-AUTO_RECOVERY=false  # 是否自动恢复服务
+AUTO_RECOVERY=false
 
 # ====================== 日志系统 ======================
 
-# 初始化日志系统
 init_log_system() {
     mkdir -p "$LOG_DIR" 2>/dev/null
     mkdir -p "$BACKUP_DIR" 2>/dev/null
@@ -35,7 +31,6 @@ init_log_system() {
     exec > >(tee -a "$INSTALL_LOG") 2>&1
 }
 
-# 日志函数
 log() {
     local msg="$1"
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
@@ -71,12 +66,10 @@ success() {
     echo "[${timestamp}] SUCCESS: $msg" >> "$INSTALL_LOG"
 }
 
-# 显示分隔线
 show_separator() {
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
 }
 
-# 命令状态检查
 check_status() {
     local return_code=$?
     local success_msg="$1"
@@ -95,7 +88,8 @@ check_status() {
     fi
 }
 
-# 检查网络连接
+# ====================== 系统检查 ======================
+
 check_network() {
     info "检查网络连接..."
     
@@ -113,9 +107,8 @@ check_network() {
     log "网络检查完成"
 }
 
-# 检查磁盘空间
 check_disk_space() {
-    local min_space=${1:-2}  # 默认2GB
+    local min_space=${1:-5}
     
     info "检查磁盘空间..."
     
@@ -130,11 +123,8 @@ check_disk_space() {
     return 0
 }
 
-# 检查是否支持浏览器打开
 check_browser_support() {
-    # 检查是否是桌面环境
     if [ -n "$DISPLAY" ] || [ "$XDG_SESSION_TYPE" = "x11" ] || [ "$XDG_SESSION_TYPE" = "wayland" ]; then
-        # 检查是否有可用的浏览器
         if command -v xdg-open &>/dev/null || command -v gnome-open &>/dev/null || command -v kde-open &>/dev/null; then
             return 0
         fi
@@ -142,7 +132,6 @@ check_browser_support() {
     return 1
 }
 
-# 尝试在浏览器中打开URL
 open_in_browser() {
     local url="$1"
     local url_desc="$2"
@@ -170,9 +159,8 @@ open_in_browser() {
     return 1
 }
 
-# ====================== 服务检查函数 ======================
+# ====================== 服务管理 ======================
 
-# 检查服务状态
 check_service_status() {
     local service_name="$1"
     local display_name="${2:-$service_name}"
@@ -180,18 +168,17 @@ check_service_status() {
     if systemctl list-unit-files | grep -q "$service_name.service"; then
         if systemctl is-active --quiet "$service_name" 2>/dev/null; then
             echo -e "  ${GREEN}✓ ${display_name}: 正在运行${NC}"
-            return 0  # 服务正在运行
+            return 0
         else
             echo -e "  ${YELLOW}⚠ ${display_name}: 已安装但未运行${NC}"
-            return 1  # 服务已安装但未运行
+            return 1
         fi
     else
         echo -e "  ${BLUE}ℹ ${display_name}: 未安装${NC}"
-        return 2  # 服务未安装
+        return 2
     fi
 }
 
-# 启动服务
 start_service() {
     local service_name="$1"
     local display_name="${2:-$service_name}"
@@ -212,7 +199,6 @@ start_service() {
     fi
 }
 
-# 重启服务
 restart_service() {
     local service_name="$1"
     local display_name="${2:-$service_name}"
@@ -233,7 +219,6 @@ restart_service() {
     fi
 }
 
-# 检查Docker安装状态
 check_docker_installed() {
     if command -v docker &>/dev/null && systemctl is-active --quiet docker 2>/dev/null; then
         return 0
@@ -242,7 +227,6 @@ check_docker_installed() {
     fi
 }
 
-# 检查1Panel安装状态
 check_1panel_installed() {
     if systemctl list-unit-files | grep -q "1panel" || command -v 1pctl &>/dev/null || [ -f "/usr/local/bin/1panel" ]; then
         return 0
@@ -253,53 +237,6 @@ check_1panel_installed() {
 
 # ====================== 启动器功能 ======================
 
-# 自动恢复服务
-auto_recovery_services() {
-    info "开始检查并恢复服务..."
-    
-    local need_recovery=false
-    local services_to_check=("docker" "1panel" "nginx" "mysql" "postgresql" "apache2" "chronyd" "ssh")
-    local service_names=("Docker" "1Panel", "Nginx", "MySQL", "PostgreSQL", "Apache", "时间同步", "SSH")
-    
-    echo ""
-    echo -e "${CYAN}服务状态检查：${NC}"
-    
-    for i in "${!services_to_check[@]}"; do
-        local service="${services_to_check[i]}"
-        local name="${service_names[i]}"
-        
-        if check_service_status "$service" "$name"; then
-            # 服务正在运行，继续检查下一个
-            continue
-        elif [ $? -eq 1 ]; then
-            # 服务已安装但未运行
-            need_recovery=true
-            
-            if [ "$AUTO_RECOVERY" = true ]; then
-                # 自动恢复模式
-                start_service "$service" "$name"
-            else
-                # 交互模式，询问用户
-                read -p "是否启动 ${name} 服务？(y/N): " -n 1 start_confirm
-                echo
-                if [[ $start_confirm =~ ^[Yy]$ ]]; then
-                    start_service "$service" "$name"
-                else
-                    warn "跳过启动 ${name} 服务"
-                fi
-            fi
-        fi
-        # 如果返回2（未安装），则跳过
-    done
-    
-    if [ "$need_recovery" = false ]; then
-        success "所有服务运行正常"
-    else
-        success "服务恢复完成"
-    fi
-}
-
-# 快速启动菜单
 quick_start_menu() {
     while true; do
         show_header
@@ -346,55 +283,35 @@ quick_start_menu() {
     done
 }
 
-# 检查所有服务状态
 check_all_services() {
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${CYAN}               服务状态报告                  ${NC}"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo ""
     
-    # 系统基本信息
     echo -e "${BLUE}系统信息：${NC}"
     echo "  系统: $(lsb_release -ds 2>/dev/null || grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
     echo "  时间: $(date)"
     echo "  运行时间: $(uptime -p 2>/dev/null || uptime)"
     echo ""
     
-    # 系统服务状态
-    echo -e "${BLUE}系统服务状态：${NC}"
+    echo -e "${BLUE}系统服务：${NC}"
     check_service_status "chronyd" "时间同步"
     check_service_status "ssh" "SSH服务"
     check_service_status "ufw" "防火墙"
     echo ""
     
-    # Docker服务
-    echo -e "${BLUE}容器服务状态：${NC}"
+    echo -e "${BLUE}容器服务：${NC}"
     if check_docker_installed; then
         echo -e "  ${GREEN}✓ Docker: 正在运行${NC}"
-        # 检查Docker容器
-        if command -v docker &>/dev/null; then
-            local container_count=$(docker ps -q 2>/dev/null | wc -l)
-            echo "    运行中的容器: $container_count"
-        fi
+        local container_count=$(docker ps -q 2>/dev/null | wc -l)
+        echo "    运行中的容器: $container_count"
     else
         echo -e "  ${YELLOW}⚠ Docker: 未运行${NC}"
     fi
     echo ""
     
-    # Web服务状态
-    echo -e "${BLUE}Web服务状态：${NC}"
-    check_service_status "nginx" "Nginx"
-    check_service_status "apache2" "Apache"
-    echo ""
-    
-    # 数据库服务状态
-    echo -e "${BLUE}数据库服务状态：${NC}"
-    check_service_status "mysql" "MySQL"
-    check_service_status "postgresql" "PostgreSQL"
-    echo ""
-    
-    # 面板服务状态
-    echo -e "${BLUE}管理面板状态：${NC}"
+    echo -e "${BLUE}管理面板：${NC}"
     if check_1panel_installed; then
         check_service_status "1panel" "1Panel"
     else
@@ -412,10 +329,9 @@ check_all_services() {
     fi
     echo ""
     
-    # 端口检查
-    echo -e "${BLUE}关键端口状态：${NC}"
-    local ports_to_check=(22 80 443 9090 8888 3306 5432)
-    local port_names=("SSH" "HTTP" "HTTPS" "1Panel" "宝塔" "MySQL" "PostgreSQL")
+    echo -e "${BLUE}端口状态：${NC}"
+    local ports_to_check=(22 80 443 9090 8888)
+    local port_names=("SSH" "HTTP" "HTTPS" "1Panel" "宝塔")
     
     for i in "${!ports_to_check[@]}"; do
         local port="${ports_to_check[i]}"
@@ -427,13 +343,11 @@ check_all_services() {
             echo -e "  ${YELLOW}⚠ 端口 ${port} (${name}): 未监听${NC}"
         fi
     done
-    echo ""
     
     show_separator
     echo -e "${GREEN}检查完成！${NC}"
 }
 
-# 恢复所有服务
 recover_all_services() {
     warn "开始恢复所有服务..."
     
@@ -444,7 +358,6 @@ recover_all_services() {
         return 0
     fi
     
-    # 恢复系统服务
     local system_services=("chronyd" "ssh" "ufw")
     for service in "${system_services[@]}"; do
         if systemctl list-unit-files | grep -q "$service.service" && ! systemctl is-active --quiet "$service" 2>/dev/null; then
@@ -452,33 +365,14 @@ recover_all_services() {
         fi
     done
     
-    # 恢复Docker
     if command -v docker &>/dev/null && ! systemctl is-active --quiet docker 2>/dev/null; then
         start_service "docker" "Docker"
     fi
     
-    # 恢复Web服务
-    local web_services=("nginx" "apache2")
-    for service in "${web_services[@]}"; do
-        if systemctl list-unit-files | grep -q "$service.service" && ! systemctl is-active --quiet "$service" 2>/dev/null; then
-            start_service "$service"
-        fi
-    done
-    
-    # 恢复数据库服务
-    local db_services=("mysql" "postgresql")
-    for service in "${db_services[@]}"; do
-        if systemctl list-unit-files | grep -q "$service.service" && ! systemctl is-active --quiet "$service" 2>/dev/null; then
-            start_service "$service"
-        fi
-    done
-    
-    # 恢复1Panel
     if check_1panel_installed && ! systemctl is-active --quiet 1panel 2>/dev/null; then
         start_service "1panel" "1Panel"
     fi
     
-    # 恢复宝塔面板
     if [ -f "/etc/init.d/bt" ]; then
         if ! /etc/init.d/bt status 2>/dev/null | grep -q "running"; then
             info "启动宝塔面板..."
@@ -494,7 +388,6 @@ recover_all_services() {
     success "所有服务恢复完成"
 }
 
-# 重启所有服务
 restart_all_services() {
     warn "开始重启所有服务..."
     
@@ -506,7 +399,6 @@ restart_all_services() {
         return 0
     fi
     
-    # 重启系统服务
     local system_services=("chronyd" "ssh")
     for service in "${system_services[@]}"; do
         if systemctl list-unit-files | grep -q "$service.service"; then
@@ -514,33 +406,14 @@ restart_all_services() {
         fi
     done
     
-    # 重启Docker
     if command -v docker &>/dev/null; then
         restart_service "docker" "Docker"
     fi
     
-    # 重启Web服务
-    local web_services=("nginx" "apache2")
-    for service in "${web_services[@]}"; do
-        if systemctl list-unit-files | grep -q "$service.service"; then
-            restart_service "$service"
-        fi
-    done
-    
-    # 重启数据库服务
-    local db_services=("mysql" "postgresql")
-    for service in "${db_services[@]}"; do
-        if systemctl list-unit-files | grep -q "$service.service"; then
-            restart_service "$service"
-        fi
-    done
-    
-    # 重启1Panel
     if check_1panel_installed; then
         restart_service "1panel" "1Panel"
     fi
     
-    # 重启宝塔面板
     if [ -f "/etc/init.d/bt" ]; then
         info "重启宝塔面板..."
         /etc/init.d/bt restart 2>/dev/null
@@ -555,7 +428,6 @@ restart_all_services() {
     success "所有服务重启完成"
 }
 
-# 设置自动恢复模式
 set_auto_recovery_mode() {
     show_header
     echo -e "${CYAN}自动恢复模式设置${NC}"
@@ -603,14 +475,11 @@ set_auto_recovery_mode() {
     read -p "按回车键继续..."
 }
 
-# 创建开机自启动脚本
 create_autostart_script() {
     info "创建开机自启动脚本..."
     
-    local autostart_dir="/etc/systemd/system"
-    local service_file="${autostart_dir}/yx-deploy-recovery.service"
+    local service_file="/etc/systemd/system/yx-deploy-recovery.service"
     
-    # 创建systemd服务文件
     cat > "$service_file" << EOF
 [Unit]
 Description=yx-deploy Auto Recovery Service
@@ -628,21 +497,16 @@ Group=root
 WantedBy=multi-user.target
 EOF
     
-    # 创建恢复脚本
     cat > /usr/local/bin/yx-deploy-recovery.sh << 'EOF'
 #!/bin/bash
 # yx-deploy Auto Recovery Script
-# 在系统启动时自动恢复服务
 
 LOG_FILE="/var/log/yx-deploy/recovery.log"
 mkdir -p /var/log/yx-deploy 2>/dev/null
 
 echo "$(date): 开始自动恢复服务..." >> "$LOG_FILE"
-
-# 等待网络就绪
 sleep 10
 
-# 恢复Docker服务
 if command -v docker &>/dev/null; then
     if ! systemctl is-active --quiet docker; then
         systemctl start docker >> "$LOG_FILE" 2>&1
@@ -650,7 +514,6 @@ if command -v docker &>/dev/null; then
     fi
 fi
 
-# 恢复1Panel服务
 if systemctl list-unit-files | grep -q "1panel.service"; then
     if ! systemctl is-active --quiet 1panel; then
         systemctl start 1panel >> "$LOG_FILE" 2>&1
@@ -658,7 +521,6 @@ if systemctl list-unit-files | grep -q "1panel.service"; then
     fi
 fi
 
-# 恢复宝塔面板
 if [ -f "/etc/init.d/bt" ]; then
     if ! /etc/init.d/bt status 2>/dev/null | grep -q "running"; then
         /etc/init.d/bt start >> "$LOG_FILE" 2>&1
@@ -666,24 +528,12 @@ if [ -f "/etc/init.d/bt" ]; then
     fi
 fi
 
-# 恢复其他服务
-services=("nginx" "mysql" "postgresql" "apache2")
-for service in "${services[@]}"; do
-    if systemctl list-unit-files | grep -q "${service}.service"; then
-        if ! systemctl is-active --quiet "$service"; then
-            systemctl start "$service" >> "$LOG_FILE" 2>&1
-            echo "$(date): 启动${service}服务" >> "$LOG_FILE"
-        fi
-    fi
-done
-
 echo "$(date): 自动恢复服务完成" >> "$LOG_FILE"
 EOF
     
     chmod +x /usr/local/bin/yx-deploy-recovery.sh
     chmod 644 "$service_file"
     
-    # 启用并启动服务
     systemctl daemon-reload
     systemctl enable yx-deploy-recovery.service 2>/dev/null
     systemctl start yx-deploy-recovery.service 2>/dev/null
@@ -696,26 +546,19 @@ EOF
     echo "日志文件: /var/log/yx-deploy/recovery.log"
 }
 
-# 删除开机自启动脚本
 remove_autostart_script() {
     info "删除开机自启动脚本..."
     
-    local service_file="/etc/systemd/system/yx-deploy-recovery.service"
-    local recovery_script="/usr/local/bin/yx-deploy-recovery.sh"
-    
-    # 停止并禁用服务
     systemctl stop yx-deploy-recovery.service 2>/dev/null
     systemctl disable yx-deploy-recovery.service 2>/dev/null
     systemctl daemon-reload
     
-    # 删除文件
-    rm -f "$service_file" 2>/dev/null
-    rm -f "$recovery_script" 2>/dev/null
+    rm -f /etc/systemd/system/yx-deploy-recovery.service 2>/dev/null
+    rm -f /usr/local/bin/yx-deploy-recovery.sh 2>/dev/null
     
     success "开机自启动脚本已删除"
 }
 
-# 查看服务日志
 view_service_logs() {
     while true; do
         show_header
@@ -724,14 +567,12 @@ view_service_logs() {
         echo ""
         echo "1. 查看Docker日志"
         echo "2. 查看1Panel日志"
-        echo "3. 查看Nginx日志"
-        echo "4. 查看MySQL日志"
-        echo "5. 查看系统日志"
-        echo "6. 查看恢复日志"
-        echo "7. 返回"
+        echo "3. 查看系统日志"
+        echo "4. 查看恢复日志"
+        echo "5. 返回"
         echo ""
         
-        read -p "请输入选择 (1-7): " log_choice
+        read -p "请输入选择 (1-5): " log_choice
         
         case $log_choice in
             1)
@@ -748,23 +589,11 @@ view_service_logs() {
                 ;;
             3)
                 echo ""
-                echo -e "${CYAN}Nginx日志：${NC}"
-                journalctl -u nginx -n 30 --no-pager 2>/dev/null || tail -30 /var/log/nginx/error.log 2>/dev/null || echo "Nginx日志不可用"
-                read -p "按回车键继续..."
-                ;;
-            4)
-                echo ""
-                echo -e "${CYAN}MySQL日志：${NC}"
-                journalctl -u mysql -n 30 --no-pager 2>/dev/null || tail -30 /var/log/mysql/error.log 2>/dev/null || echo "MySQL日志不可用"
-                read -p "按回车键继续..."
-                ;;
-            5)
-                echo ""
                 echo -e "${CYAN}系统日志：${NC}"
                 dmesg | tail -30
                 read -p "按回车键继续..."
                 ;;
-            6)
+            4)
                 echo ""
                 echo -e "${CYAN}恢复日志：${NC}"
                 if [ -f "/var/log/yx-deploy/recovery.log" ]; then
@@ -774,7 +603,7 @@ view_service_logs() {
                 fi
                 read -p "按回车键继续..."
                 ;;
-            7)
+            5)
                 return
                 ;;
             *)
@@ -785,16 +614,12 @@ view_service_logs() {
     done
 }
 
-# ====================== 启动时自动恢复检查 ======================
-
-# 检查并恢复服务（脚本启动时自动执行）
 startup_recovery_check() {
     info "启动时服务状态检查..."
     
     local stopped_services=()
+    local critical_services=("docker" "1panel")
     
-    # 检查关键服务
-    local critical_services=("docker" "1panel" "nginx" "mysql")
     for service in "${critical_services[@]}"; do
         if systemctl list-unit-files | grep -q "$service.service"; then
             if ! systemctl is-active --quiet "$service" 2>/dev/null; then
@@ -803,7 +628,6 @@ startup_recovery_check() {
         fi
     done
     
-    # 检查宝塔面板
     if [ -f "/etc/init.d/bt" ]; then
         if ! /etc/init.d/bt status 2>/dev/null | grep -q "running"; then
             stopped_services+=("宝塔面板")
@@ -835,9 +659,8 @@ startup_recovery_check() {
     fi
 }
 
-# ====================== 基础检查函数 ======================
+# ====================== 基础检查 ======================
 
-# 检查sudo权限
 check_sudo() {
     if [[ $EUID -eq 0 ]]; then
         log "使用root权限运行"
@@ -846,7 +669,6 @@ check_sudo() {
     
     info "检测到非root用户，尝试使用sudo..."
     
-    # 检查sudo是否可用
     if ! command -v sudo &>/dev/null; then
         error "未找到sudo命令，请以root用户运行此脚本"
         echo -e "${YELLOW}可以使用以下方式：${NC}"
@@ -856,7 +678,6 @@ check_sudo() {
         exit 1
     fi
     
-    # 检查sudo权限
     if ! sudo -n true 2>/dev/null; then
         echo -e "${YELLOW}需要sudo权限来运行此脚本${NC}"
         echo "请输入密码继续..."
@@ -866,12 +687,10 @@ check_sudo() {
         }
     fi
     
-    # 重新以sudo运行
     warn "重新以sudo权限运行脚本..."
     exec sudo bash "$0" "$@"
 }
 
-# 检测系统版本
 check_ubuntu_version() {
     if [ ! -f "/etc/os-release" ]; then
         error "无法检测操作系统"
@@ -909,30 +728,26 @@ check_ubuntu_version() {
     log "检测到 Ubuntu $version 系统 ✓"
 }
 
-# 显示标题
 show_header() {
     clear
     echo -e "${PURPLE}"
     echo "╔══════════════════════════════════════════════════════════╗"
     echo "║                                                          ║"
     echo "║          Ubuntu 服务器部署脚本 v$SCRIPT_VERSION           ║"
-    echo "║              自启动版 - 智能服务恢复                     ║"
+    echo "║                  优化版 - 专业运维                      ║"
     echo "║                                                          ║"
     echo "╚══════════════════════════════════════════════════════════╝"
     echo -e "${NC}"
     echo ""
 }
 
-# 确认执行
 confirm_execution() {
     show_header
     
-    # 显示当前恢复模式
     echo -e "${CYAN}当前恢复模式：${NC}"
     echo -e "  自动恢复: $([ "$AUTO_RECOVERY" = true ] && echo "${GREEN}启用${NC}" || echo "${YELLOW}禁用${NC}")"
     echo ""
     
-    # 系统信息
     echo -e "${CYAN}系统信息：${NC}"
     echo "  OS: $(lsb_release -ds 2>/dev/null || grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
     echo "  内核: $(uname -r)"
@@ -945,20 +760,12 @@ confirm_execution() {
     echo -e "${CYAN}日志文件: ${INSTALL_LOG}${NC}"
     echo -e "${CYAN}备份目录: ${BACKUP_DIR}${NC}"
     echo ""
-    echo -e "${GREEN}重要提示：${NC}"
-    echo "  1. 安装过程中会显示安装输出"
-    echo "  2. 您需要根据提示手动输入确认信息"
-    echo "  3. 支持服务自动恢复功能"
-    echo "  4. 支持开机自启动恢复"
-    echo ""
     
-    # 启动时自动检查服务状态
     startup_recovery_check
     
     read -p "按回车键进入主菜单，或按 Ctrl+C 退出..." 
 }
 
-# 检查必要工具
 check_required_tools() {
     info "检查必要工具..."
     
@@ -989,9 +796,8 @@ check_required_tools() {
     fi
 }
 
-# ====================== 系统优化函数 ======================
+# ====================== 系统优化 ======================
 
-# 备份配置文件
 backup_config() {
     local config_file="$1"
     if [ -f "$config_file" ]; then
@@ -1001,7 +807,6 @@ backup_config() {
     fi
 }
 
-# 系统优化配置（显示输出）
 system_optimization() {
     info "开始系统优化配置..."
     
@@ -1009,10 +814,14 @@ system_optimization() {
     echo -e "${YELLOW}系统优化将执行以下操作：${NC}"
     echo "  1. 更新软件包列表"
     echo "  2. 升级现有软件包"
-    echo "  3. 安装必要工具"
+    echo "  3. 安装运维工具包"
     echo "  4. 设置时区和时间同步"
-    echo "  5. 配置SSH安全"
-    echo "  6. 优化系统参数"
+    echo "  5. 配置SSH安全加固"
+    echo "  6. 优化内核参数"
+    echo "  7. 配置资源限制"
+    echo "  8. 安装监控工具"
+    echo "  9. 配置日志轮转"
+    echo "  10. 设置安全基线"
     echo ""
     
     read -p "是否继续？(y/N): " -n 1 confirm
@@ -1022,14 +831,14 @@ system_optimization() {
         return 0
     fi
     
-    # 更新软件包列表（显示输出）
+    # 更新软件包
     info "更新软件包列表..."
     show_separator
     apt-get update -y
     check_status "软件包列表更新完成" "更新失败"
     show_separator
     
-    # 升级现有软件包（显示输出）
+    # 升级软件包
     echo ""
     read -p "是否升级现有软件包？(y/N): " -n 1 upgrade_confirm
     echo
@@ -1041,16 +850,18 @@ system_optimization() {
         show_separator
     fi
     
-    # 安装必要软件（显示输出）
-    info "安装必要软件..."
+    # 安装运维工具包
+    info "安装运维工具包..."
     local packages=(
         curl wget vim git net-tools htop iftop iotop screen tmux ufw
         ntpdate software-properties-common apt-transport-https ca-certificates
         gnupg lsb-release chrony build-essential pkg-config
+        ncdu tree jq bc rsync fail2ban clamav clamav-daemon
+        sysstat dstat atop smartmontools iperf3
     )
     
-    echo "将安装以下软件包："
-    printf "  %s\n" "${packages[@]}"
+    echo "将安装以下运维工具："
+    printf "  %s\n" "${packages[@]}" | fold -w 50
     echo ""
     
     read -p "是否继续安装？(y/N): " -n 1 install_confirm
@@ -1062,7 +873,7 @@ system_optimization() {
     
     show_separator
     apt-get install -y "${packages[@]}"
-    check_status "必要软件安装完成" "软件安装失败"
+    check_status "运维工具安装完成" "软件安装失败"
     show_separator
     
     # 设置时区
@@ -1070,18 +881,20 @@ system_optimization() {
     timedatectl set-timezone Asia/Shanghai
     check_status "时区设置成功" "时区设置失败"
     
-    # 配置时间同步
+    # 时间同步
     info "配置时间同步服务..."
     systemctl stop systemd-timesyncd 2>/dev/null || true
     systemctl disable systemd-timesyncd 2>/dev/null || true
-    systemctl restart chronyd 2>/dev/null || true
+    systemctl enable chronyd
+    systemctl restart chronyd
+    check_status "时间同步配置完成" "时间同步配置失败"
     
-    # 配置SSH安全（询问）
+    # SSH安全加固
     echo ""
-    read -p "是否配置SSH安全设置？(y/N): " -n 1 ssh_confirm
+    read -p "是否配置SSH安全加固？(y/N): " -n 1 ssh_confirm
     echo
     if [[ $ssh_confirm =~ ^[Yy]$ ]]; then
-        info "配置SSH安全..."
+        info "配置SSH安全加固..."
         if [ -f "/etc/ssh/sshd_config" ]; then
             backup_config "/etc/ssh/sshd_config"
             
@@ -1089,13 +902,17 @@ system_optimization() {
             sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin no/' /etc/ssh/sshd_config 2>/dev/null || true
             sed -i 's/#PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config 2>/dev/null || true
             sed -i 's/#ClientAliveInterval 0/ClientAliveInterval 300/' /etc/ssh/sshd_config 2>/dev/null || true
+            sed -i 's/#ClientAliveCountMax 3/ClientAliveCountMax 2/' /etc/ssh/sshd_config 2>/dev/null || true
+            sed -i 's/#MaxAuthTries 6/MaxAuthTries 3/' /etc/ssh/sshd_config 2>/dev/null || true
+            sed -i 's/#LoginGraceTime 2m/LoginGraceTime 1m/' /etc/ssh/sshd_config 2>/dev/null || true
+            echo "AllowUsers root" >> /etc/ssh/sshd_config 2>/dev/null || true
             
             systemctl restart sshd
-            check_status "SSH配置完成" "SSH配置失败"
+            check_status "SSH安全加固完成" "SSH配置失败"
         fi
     fi
     
-    # 配置防火墙（询问）
+    # 防火墙配置
     echo ""
     read -p "是否配置防火墙？(y/N): " -n 1 fw_confirm
     echo
@@ -1109,7 +926,12 @@ system_optimization() {
         case $fw_choice in
             1)
                 ufw --force enable
-                log "UFW防火墙已启用"
+                ufw default deny incoming
+                ufw default allow outgoing
+                ufw allow 22/tcp
+                ufw allow 80/tcp
+                ufw allow 443/tcp
+                log "UFW防火墙已启用并配置规则"
                 ;;
             2)
                 ufw --force disable
@@ -1121,7 +943,7 @@ system_optimization() {
         esac
     fi
     
-    # 优化内核参数（询问）
+    # 内核优化
     echo ""
     read -p "是否优化内核参数？(y/N): " -n 1 kernel_confirm
     echo
@@ -1130,7 +952,7 @@ system_optimization() {
         backup_config "/etc/sysctl.conf"
         
         cat >> /etc/sysctl.conf << 'EOF'
-# 系统优化配置
+# 网络优化
 net.core.rmem_max = 67108864
 net.core.wmem_max = 67108864
 net.ipv4.tcp_rmem = 4096 87380 67108864
@@ -1138,12 +960,86 @@ net.ipv4.tcp_wmem = 4096 65536 67108864
 net.ipv4.tcp_congestion_control = bbr
 net.ipv4.tcp_fastopen = 3
 net.core.default_qdisc = fq
+net.ipv4.tcp_tw_reuse = 1
+net.ipv4.tcp_fin_timeout = 30
+
+# 系统优化
 vm.swappiness = 10
+vm.vfs_cache_pressure = 50
+vm.dirty_ratio = 10
+vm.dirty_background_ratio = 5
+
+# 安全设置
+net.ipv4.tcp_syncookies = 1
+net.ipv4.tcp_max_syn_backlog = 1024
+net.ipv4.tcp_synack_retries = 2
+net.ipv4.conf.all.rp_filter = 1
+net.ipv4.conf.default.rp_filter = 1
 EOF
         
-        # 应用内核参数
         sysctl -p
         check_status "内核参数已应用" "内核参数应用失败"
+    fi
+    
+    # 资源限制配置
+    echo ""
+    read -p "是否配置资源限制？(y/N): " -n 1 ulimit_confirm
+    echo
+    if [[ $ulimit_confirm =~ ^[Yy]$ ]]; then
+        info "配置资源限制..."
+        
+        cat >> /etc/security/limits.conf << 'EOF'
+* soft nofile 65536
+* hard nofile 65536
+* soft nproc 65536
+* hard nproc 65536
+root soft nofile 65536
+root hard nofile 65536
+EOF
+        
+        log "资源限制配置完成"
+    fi
+    
+    # 日志轮转配置
+    info "优化日志轮转配置..."
+    
+    cat > /etc/logrotate.d/syslog-optimized << 'EOF'
+/var/log/syslog
+{
+    rotate 7
+    daily
+    missingok
+    notifempty
+    delaycompress
+    compress
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+EOF
+    
+    # Fail2ban配置
+    echo ""
+    read -p "是否配置Fail2ban防暴力破解？(y/N): " -n 1 fail2ban_confirm
+    echo
+    if [[ $fail2ban_confirm =~ ^[Yy]$ ]]; then
+        info "配置Fail2ban..."
+        
+        cat > /etc/fail2ban/jail.local << 'EOF'
+[DEFAULT]
+bantime = 3600
+findtime = 600
+maxretry = 5
+
+[sshd]
+enabled = true
+port = ssh
+filter = sshd
+logpath = /var/log/auth.log
+EOF
+        
+        systemctl restart fail2ban
+        check_status "Fail2ban配置完成" "Fail2ban配置失败"
     fi
     
     echo ""
@@ -1154,13 +1050,11 @@ EOF
     return 0
 }
 
-# ====================== Docker安装函数 ======================
+# ====================== Docker安装 ======================
 
-# 安装Docker（显示输出）
 install_docker() {
     info "开始安装Docker..."
     
-    # 检查是否已安装
     if check_docker_installed; then
         local docker_version=$(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',' || echo "未知版本")
         warn "Docker已经安装，版本: $docker_version"
@@ -1172,7 +1066,6 @@ install_docker() {
         fi
     fi
     
-    # 显示安装信息
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${CYAN}              Docker安装信息${NC}"
@@ -1190,11 +1083,9 @@ install_docker() {
         return 0
     fi
     
-    # 安装Docker（显示输出）
     info "正在下载并运行Docker安装脚本..."
     show_separator
     
-    # 显示详细的安装输出
     if command -v curl &>/dev/null; then
         curl -fsSL https://get.docker.com | sh
     else
@@ -1207,7 +1098,6 @@ install_docker() {
     if [ $docker_install_status -eq 0 ]; then
         log "✅ Docker安装成功！"
         
-        # 配置镜像加速器
         info "配置Docker镜像加速器..."
         mkdir -p /etc/docker
         cat > /etc/docker/daemon.json << EOF
@@ -1220,11 +1110,9 @@ install_docker() {
 }
 EOF
         
-        # 重启Docker
         systemctl restart docker
         systemctl enable docker
         
-        # 测试Docker
         echo ""
         info "测试Docker安装..."
         if docker run --rm hello-world &>/dev/null; then
@@ -1245,13 +1133,11 @@ EOF
     fi
 }
 
-# ====================== 面板安装函数 ======================
+# ====================== 面板安装 ======================
 
-# 安装1Panel面板（显示输出，用户手动输入）
 install_1panel() {
     info "开始安装1Panel面板..."
     
-    # 检查是否已安装
     if check_1panel_installed; then
         warn "1Panel面板已经安装！"
         
@@ -1261,10 +1147,8 @@ install_1panel() {
             return 0
         fi
         
-        # 卸载现有1Panel
         info "卸载现有1Panel面板..."
         if command -v 1pctl &>/dev/null; then
-            echo "请按照提示完成卸载..."
             1pctl uninstall
         fi
         systemctl stop 1panel 2>/dev/null || true
@@ -1273,7 +1157,6 @@ install_1panel() {
         sleep 2
     fi
     
-    # 显示安装信息
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${CYAN}           1Panel面板安装信息${NC}"
@@ -1283,7 +1166,6 @@ install_1panel() {
     echo "  2. 需要设置面板访问密码"
     echo "  3. 请记住设置的密码"
     echo "  4. 默认访问地址: https://服务器IP:9090"
-    echo "  5. 安装完成后会自动尝试在浏览器中打开"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo ""
     
@@ -1294,7 +1176,6 @@ install_1panel() {
         return 0
     fi
     
-    # 显示安装步骤
     echo ""
     echo -e "${YELLOW}安装步骤说明：${NC}"
     echo "  1. 下载安装脚本"
@@ -1302,16 +1183,13 @@ install_1panel() {
     echo "  3. 当提示 'Please enter y or n:' 时，请输入 y"
     echo "  4. 设置面板密码（输入两次）"
     echo "  5. 等待安装完成"
-    echo "  6. 自动在浏览器中打开面板"
     echo ""
     
     read -p "按回车键开始安装，或按 Ctrl+C 取消..." 
     
-    # 安装1Panel面板（显示实时输出）
     info "下载并安装1Panel面板..."
     show_separator
     
-    # 直接运行安装脚本，显示实时输出
     curl -sSL https://resource.fit2cloud.com/1panel/package/quick_start.sh -o quick_start.sh
     chmod +x quick_start.sh
     ./quick_start.sh
@@ -1319,12 +1197,10 @@ install_1panel() {
     local install_status=$?
     show_separator
     
-    # 检查安装结果
     sleep 5
     if check_1panel_installed; then
         success "✅ 1Panel面板安装成功！"
         
-        # 获取IP地址
         local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
         local panel_url="https://${ip_address}:9090"
         
@@ -1337,10 +1213,7 @@ install_1panel() {
         echo -e "${YELLOW}用户名: admin${NC}"
         echo -e "${YELLOW}密码: 您刚才设置的密码${NC}"
         echo ""
-        echo -e "${RED}⚠  重要：请立即登录并确保密码安全！${NC}"
-        echo ""
         
-        # 尝试在浏览器中打开
         open_in_browser "$panel_url" "1Panel面板"
         
         return 0
@@ -1350,11 +1223,9 @@ install_1panel() {
     fi
 }
 
-# 安装宝塔面板（显示输出）
 install_baota() {
     info "开始安装宝塔面板..."
     
-    # 检查是否已安装
     if [ -f "/etc/init.d/bt" ]; then
         warn "宝塔面板已经安装！"
         
@@ -1365,7 +1236,6 @@ install_baota() {
         fi
     fi
     
-    # 显示安装信息
     echo ""
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${CYAN}           宝塔面板安装信息${NC}"
@@ -1375,7 +1245,6 @@ install_baota() {
     echo "  2. 安装过程中需要您确认（输入 y）"
     echo "  3. 安装完成后会显示登录信息"
     echo "  4. 请保存显示的登录信息"
-    echo "  5. 安装完成后会自动尝试在浏览器中打开"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo ""
     
@@ -1393,16 +1262,13 @@ install_baota() {
     echo "  3. 当提示确认时，请输入 y"
     echo "  4. 等待安装完成"
     echo "  5. 保存显示的登录信息"
-    echo "  6. 自动在浏览器中打开面板"
     echo ""
     
     read -p "按回车键开始安装，或按 Ctrl+C 取消..." 
     
-    # 安装宝塔面板（显示实时输出）
     info "下载并安装宝塔面板..."
     show_separator
     
-    # 直接运行安装脚本，显示实时输出
     if command -v curl &>/dev/null; then
         curl -sSO https://download.bt.cn/install/install_panel.sh
     else
@@ -1414,12 +1280,10 @@ install_baota() {
     local install_status=$?
     show_separator
     
-    # 检查安装结果
     sleep 5
     if [ -f "/etc/init.d/bt" ]; then
         success "✅ 宝塔面板安装成功！"
         
-        # 获取IP地址
         local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null)
         local panel_url="http://${ip_address}:8888"
         
@@ -1432,7 +1296,6 @@ install_baota() {
         echo -e "${YELLOW}请查看屏幕上显示的登录信息${NC}"
         echo ""
         
-        # 尝试在浏览器中打开
         open_in_browser "$panel_url" "宝塔面板"
         
         return 0
@@ -1442,139 +1305,8 @@ install_baota() {
     fi
 }
 
-# ====================== 其他安装函数 ======================
+# ====================== 卸载功能 ======================
 
-# 安装Nginx（显示输出）
-install_nginx() {
-    info "开始安装Nginx..."
-    
-    if command -v nginx &>/dev/null; then
-        warn "Nginx已经安装"
-        
-        read -p "是否重新安装Nginx？(y/N): " -n 1 confirm
-        echo
-        if [[ ! $confirm =~ ^[Yy]$ ]]; then
-            return 0
-        fi
-    fi
-    
-    read -p "是否继续安装Nginx？(y/N): " -n 1 install_confirm
-    echo
-    if [[ ! $install_confirm =~ ^[Yy]$ ]]; then
-        log "用户取消Nginx安装"
-        return 0
-    fi
-    
-    show_separator
-    apt-get update -y
-    apt-get install -y nginx
-    show_separator
-    
-    systemctl enable nginx
-    systemctl start nginx
-    
-    check_status "Nginx安装成功" "Nginx安装失败"
-}
-
-# 安装Apache（显示输出）
-install_apache() {
-    info "开始安装Apache..."
-    
-    if command -v apache2 &>/dev/null; then
-        warn "Apache已经安装"
-        
-        read -p "是否重新安装Apache？(y/N): " -n 1 confirm
-        echo
-        if [[ ! $confirm =~ ^[Yy]$ ]]; then
-            return 0
-        fi
-    fi
-    
-    read -p "是否继续安装Apache？(y/N): " -n 1 install_confirm
-    echo
-    if [[ ! $install_confirm =~ ^[Yy]$ ]]; then
-        log "用户取消Apache安装"
-        return 0
-    fi
-    
-    show_separator
-    apt-get update -y
-    apt-get install -y apache2
-    show_separator
-    
-    systemctl enable apache2
-    systemctl start apache2
-    
-    check_status "Apache安装成功" "Apache安装失败"
-}
-
-# 安装MySQL（显示输出）
-install_mysql() {
-    info "开始安装MySQL..."
-    
-    if command -v mysql &>/dev/null; then
-        warn "MySQL已经安装"
-        
-        read -p "是否重新安装MySQL？(y/N): " -n 1 confirm
-        echo
-        if [[ ! $confirm =~ ^[Yy]$ ]]; then
-            return 0
-        fi
-    fi
-    
-    read -p "是否继续安装MySQL？(y/N): " -n 1 install_confirm
-    echo
-    if [[ ! $install_confirm =~ ^[Yy]$ ]]; then
-        log "用户取消MySQL安装"
-        return 0
-    fi
-    
-    show_separator
-    apt-get update -y
-    apt-get install -y mysql-server
-    show_separator
-    
-    systemctl enable mysql
-    systemctl start mysql
-    
-    check_status "MySQL安装成功" "MySQL安装失败"
-}
-
-# 安装PostgreSQL（显示输出）
-install_postgresql() {
-    info "开始安装PostgreSQL..."
-    
-    if command -v psql &>/dev/null; then
-        warn "PostgreSQL已经安装"
-        
-        read -p "是否重新安装PostgreSQL？(y/N): " -n 1 confirm
-        echo
-        if [[ ! $confirm =~ ^[Yy]$ ]]; then
-            return 0
-        fi
-    fi
-    
-    read -p "是否继续安装PostgreSQL？(y/N): " -n 1 install_confirm
-    echo
-    if [[ ! $install_confirm =~ ^[Yy]$ ]]; then
-        log "用户取消PostgreSQL安装"
-        return 0
-    fi
-    
-    show_separator
-    apt-get update -y
-    apt-get install -y postgresql postgresql-contrib
-    show_separator
-    
-    systemctl enable postgresql
-    systemctl start postgresql
-    
-    check_status "PostgreSQL安装成功" "PostgreSQL安装失败"
-}
-
-# ====================== 卸载函数 ======================
-
-# 卸载Docker
 uninstall_docker() {
     warn "开始卸载Docker..."
     
@@ -1591,18 +1323,16 @@ uninstall_docker() {
     
     info "卸载Docker软件包..."
     apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null
-    apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin 2>/dev/null
+    apt-get purge -y docker-ce docker-ce-cli containerd.io 2>/dev/null
     
     info "清理Docker数据..."
     rm -rf /var/lib/docker
     rm -rf /var/lib/containerd
     rm -rf /etc/docker
-    rm -f /etc/apparmor.d/docker 2>/dev/null
     
     success "Docker卸载完成"
 }
 
-# 卸载1Panel面板
 uninstall_1panel() {
     warn "开始卸载1Panel面板..."
     
@@ -1625,7 +1355,6 @@ uninstall_1panel() {
         1pctl uninstall
     fi
     
-    # 清理残留文件
     systemctl stop 1panel 2>/dev/null || true
     systemctl disable 1panel 2>/dev/null || true
     
@@ -1633,12 +1362,10 @@ uninstall_1panel() {
     rm -rf /usr/local/bin/1panel
     rm -rf /usr/local/bin/1pctl 2>/dev/null
     rm -f /etc/systemd/system/1panel.service 2>/dev/null
-    rm -rf /opt/1panel_data 2>/dev/null
     
     success "1Panel面板卸载完成"
 }
 
-# 卸载宝塔面板
 uninstall_baota() {
     warn "开始卸载宝塔面板..."
     
@@ -1661,27 +1388,23 @@ uninstall_baota() {
         bash /www/server/panel/install.sh uninstall
     fi
     
-    # 清理残留文件
     rm -rf /www/server/panel
     rm -f /etc/init.d/bt
     
     success "宝塔面板卸载完成"
 }
 
-# 清理临时文件
 cleanup_temp_files() {
     info "清理临时文件..."
     
     rm -f quick_start.sh 2>/dev/null
     rm -f install_panel.sh 2>/dev/null
     
-    # 清理旧的日志文件（保留最近7天）
     find "$LOG_DIR" -type f -name "*.log" -mtime +7 -delete 2>/dev/null
     
     log "临时文件清理完成"
 }
 
-# 清理所有安装
 cleanup_all() {
     warn "开始清理所有安装..."
     
@@ -1690,8 +1413,6 @@ cleanup_all() {
     echo "  1. Docker"
     echo "  2. 1Panel面板"
     echo "  3. 宝塔面板"
-    echo "  4. Nginx"
-    echo "  5. MySQL"
     echo ""
     
     read -p "确定要清理所有安装吗？(y/N): " -n 1 confirm
@@ -1701,28 +1422,23 @@ cleanup_all() {
         return 0
     fi
     
-    # 卸载1Panel
     if check_1panel_installed; then
         uninstall_1panel
     fi
     
-    # 卸载宝塔面板
     if [ -f "/etc/init.d/bt" ]; then
         uninstall_baota
     fi
     
-    # 卸载Docker
     if check_docker_installed; then
         uninstall_docker
     fi
     
-    # 清理临时文件
     cleanup_temp_files
     
     success "所有安装清理完成"
 }
 
-# 清理菜单
 cleanup_menu() {
     while true; do
         show_header
@@ -1768,20 +1484,17 @@ cleanup_menu() {
 
 # ====================== 系统状态检查 ======================
 
-# 系统完整性检查
 system_integrity_check() {
     show_header
     echo -e "${CYAN}       系统完整性检查报告${NC}"
     show_separator
     echo ""
     
-    # 系统信息
     echo -e "${BLUE}1. 系统信息：${NC}"
     echo "   OS: $(lsb_release -ds 2>/dev/null || grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
     echo "   内核: $(uname -r)"
     echo "   架构: $(uname -m)"
     
-    # 资源使用
     echo ""
     echo -e "${BLUE}2. 资源使用：${NC}"
     echo -n "   内存: "
@@ -1789,18 +1502,15 @@ system_integrity_check() {
     echo -n "   磁盘: "
     df -h / | awk 'NR==2{print $4 " / " $2}'
     
-    # 服务状态
     echo ""
     echo -e "${BLUE}3. 服务状态：${NC}"
     
-    # Docker状态
     if check_docker_installed; then
         echo "   ✓ Docker: 已安装且运行正常"
     else
         echo "   ✗ Docker: 未安装或未运行"
     fi
     
-    # 1Panel状态
     if check_1panel_installed; then
         echo "   ✓ 1Panel: 已安装"
         if systemctl is-active --quiet 1panel 2>/dev/null; then
@@ -1812,7 +1522,6 @@ system_integrity_check() {
         echo "   ✗ 1Panel: 未安装"
     fi
     
-    # 网络状态
     echo ""
     echo -e "${BLUE}4. 网络状态：${NC}"
     local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "未知")
@@ -1827,12 +1536,10 @@ system_integrity_check() {
 
 # ====================== 主菜单 ======================
 
-# 显示主菜单
 main_menu() {
     while true; do
         show_header
         
-        # 显示当前安装状态
         echo -e "${CYAN}当前安装状态：${NC}"
         echo -n "  Docker: "
         if check_docker_installed; then
@@ -1863,22 +1570,18 @@ main_menu() {
         echo "2. 安装Docker"
         echo "3. 安装1Panel面板"
         echo "4. 安装宝塔面板"
-        echo "5. 安装Nginx"
-        echo "6. 安装Apache"
-        echo "7. 安装MySQL"
-        echo "8. 安装PostgreSQL"
-        echo "9. 完整安装（1+2+3）"
-        echo "10. 快速启动管理器"
-        echo "11. 系统状态检查"
-        echo "12. 卸载工具"
-        echo "13. 清理临时文件"
+        echo "5. 完整安装（1+2+3）"
+        echo "6. 快速启动管理器"
+        echo "7. 系统状态检查"
+        echo "8. 卸载工具"
+        echo "9. 清理临时文件"
         echo "0. 退出"
         echo ""
         echo -e "${YELLOW}提示：所有安装都会显示输出，需要您手动确认${NC}"
         echo -e "${YELLOW}日志文件: ${INSTALL_LOG}${NC}"
         show_separator
         
-        read -p "请输入选择 (0-13): " choice
+        read -p "请输入选择 (0-9): " choice
         
         case $choice in
             1) 
@@ -1898,22 +1601,6 @@ main_menu() {
                 read -p "按回车键返回主菜单..." 
                 ;;
             5) 
-                install_nginx
-                read -p "按回车键返回主菜单..." 
-                ;;
-            6) 
-                install_apache
-                read -p "按回车键返回主菜单..." 
-                ;;
-            7) 
-                install_mysql
-                read -p "按回车键返回主菜单..." 
-                ;;
-            8) 
-                install_postgresql
-                read -p "按回车键返回主菜单..." 
-                ;;
-            9) 
                 echo -e "${YELLOW}开始完整安装流程...${NC}"
                 echo ""
                 system_optimization
@@ -1921,16 +1608,16 @@ main_menu() {
                 install_1panel
                 read -p "按回车键返回主菜单..." 
                 ;;
-            10)
+            6)
                 quick_start_menu
                 ;;
-            11)
+            7)
                 system_integrity_check
                 ;;
-            12)
+            8)
                 cleanup_menu
                 ;;
-            13)
+            9)
                 cleanup_temp_files
                 read -p "按回车键返回主菜单..." 
                 ;;
@@ -1948,38 +1635,23 @@ main_menu() {
 
 # ====================== 主程序 ======================
 
-# 主函数
 main() {
-    # 初始化日志系统
     init_log_system
-    
-    # 检查sudo权限
     check_sudo "$@"
-    
-    # 检查必要工具
     check_required_tools
-    
-    # 检测系统版本
     check_ubuntu_version
-    
-    # 确认执行（包含启动时恢复检查）
     confirm_execution
     
-    # 记录开始时间
     local start_time=$(date +%s)
     log "脚本开始执行 (v$SCRIPT_VERSION)"
     
-    # 显示主菜单
     main_menu
     
-    # 记录结束时间
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
     log "脚本执行完成，总耗时: ${duration}秒"
 }
 
-# 设置异常处理
 trap 'error "脚本被中断"; echo -e "${YELLOW}日志文件: ${INSTALL_LOG}${NC}"; exit 1' INT TERM
 
-# 执行主函数
 main "$@"
