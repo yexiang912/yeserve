@@ -21,7 +21,7 @@ SCRIPT_NAME="yx-deploy-pro"
 BACKUP_DIR="/backup/${SCRIPT_NAME}"
 LOG_DIR="/var/log/${SCRIPT_NAME}"
 INSTALL_LOG="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
-DIALOG_TITLE="Ubuntu服务器部署工具 Pro版 v$SCRIPT_VERSION"
+DIALOG_TITLE="Ubuntu服务器部署工具 Pro版 原创 改名字四亩 v$SCRIPT_VERSION"
 AUTO_RECOVERY=false
 
 # ====================== 加密密钥验证 ======================
