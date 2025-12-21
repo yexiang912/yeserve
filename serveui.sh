@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# Ubuntu 服务器一键部署脚本 (GUI优化版 v6.0)
+# Ubuntu 服务器一键部署脚本 (GUI修复版 v6.0)
 # =============================================
 
 # 颜色定义
@@ -107,7 +107,71 @@ check_dialog() {
 show_gui() {
     local title="$1"
     shift
-    dialog --backtitle "$DIALOG_TITLE" --title "$title" "$@" 3>&1 1>&2 2>&3
+    # 保存当前stty设置
+    local old_stty=$(stty -g)
+    # 执行dialog命令
+    dialog --backtitle "$DIALOG_TITLE" --title "$title" "$@" 2>&1 >/dev/tty
+    local result=$?
+    # 恢复stty设置
+    stty $old_stty
+    echo $result
+}
+
+show_gui_menu() {
+    local title="$1"
+    local height="$2"
+    local width="$3"
+    local menu_height="$4"
+    shift 4
+    
+    # 保存当前stty设置
+    local old_stty=$(stty -g)
+    # 执行dialog命令并捕获输出
+    local output
+    output=$(dialog --backtitle "$DIALOG_TITLE" --title "$title" \
+                    --menu "" \
+                    $height $width $menu_height \
+                    "$@" 2>&1 >/dev/tty)
+    local result=$?
+    # 恢复stty设置
+    stty $old_stty
+    
+    if [ $result -eq 0 ]; then
+        echo "$output"
+    else
+        echo ""
+    fi
+    return $result
+}
+
+show_gui_msgbox() {
+    local title="$1"
+    local msg="$2"
+    local height="$3"
+    local width="$4"
+    
+    # 保存当前stty设置
+    local old_stty=$(stty -g)
+    dialog --backtitle "$DIALOG_TITLE" --title "$title" \
+           --msgbox "$msg" $height $width 2>&1 >/dev/tty
+    local result=$?
+    stty $old_stty
+    return $result
+}
+
+show_gui_yesno() {
+    local title="$1"
+    local msg="$2"
+    local height="$3"
+    local width="$4"
+    
+    # 保存当前stty设置
+    local old_stty=$(stty -g)
+    dialog --backtitle "$DIALOG_TITLE" --title "$title" \
+           --yesno "$msg" $height $width 2>&1 >/dev/tty
+    local result=$?
+    stty $old_stty
+    return $result
 }
 
 exit_to_terminal() {
@@ -278,9 +342,7 @@ check_1panel_installed() {
 
 quick_start_menu() {
     while true; do
-        choice=$(show_gui "快速启动管理器" \
-                  --menu "\n请选择要执行的操作：" \
-                  15 60 6 \
+        choice=$(show_gui_menu "快速启动管理器" 15 60 6 \
                   "1" "检查所有服务状态" \
                   "2" "恢复所有停止的服务" \
                   "3" "重启所有服务" \
@@ -288,7 +350,7 @@ quick_start_menu() {
                   "5" "查看服务日志" \
                   "6" "返回主菜单")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             return
         fi
         
@@ -386,9 +448,7 @@ check_all_services_gui() {
 }
 
 recover_all_services_gui() {
-    if ! show_gui "恢复服务" \
-         --yesno "确定要恢复所有停止的服务吗？" \
-         8 40; then
+    if ! show_gui_yesno "恢复服务" "确定要恢复所有停止的服务吗？" 8 40; then
         log "取消服务恢复"
         return
     fi
@@ -428,9 +488,7 @@ recover_all_services_gui() {
 }
 
 restart_all_services_gui() {
-    if ! show_gui "重启服务" \
-         --yesno "⚠ 警告：这将重启所有服务，可能导致短暂的服务中断\n\n确定要重启所有服务吗？" \
-         10 50; then
+    if ! show_gui_yesno "重启服务" "⚠ 警告：这将重启所有服务，可能导致短暂的服务中断\n\n确定要重启所有服务吗？" 10 50; then
         log "取消服务重启"
         return
     fi
@@ -470,27 +528,25 @@ restart_all_services_gui() {
 
 set_auto_recovery_mode_gui() {
     while true; do
-        choice=$(show_gui "自动恢复模式设置" \
-                  --menu "\n当前自动恢复模式: $([ "$AUTO_RECOVERY" = true ] && echo "启用" || echo "禁用")\n\n自动恢复模式说明：\n启用时：服务器重启后自动恢复所有服务\n禁用时：需要手动确认是否恢复服务" \
-                  15 60 5 \
+        choice=$(show_gui_menu "自动恢复模式设置" 15 60 5 \
                   "1" "启用自动恢复模式" \
                   "2" "禁用自动恢复模式" \
                   "3" "创建开机自启动脚本" \
                   "4" "删除开机自启动脚本" \
                   "5" "返回")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             return
         fi
         
         case $choice in
             1)
                 AUTO_RECOVERY=true
-                show_gui "提示" --msgbox "已启用自动恢复模式" 8 40
+                show_gui_msgbox "提示" "已启用自动恢复模式" 8 40
                 ;;
             2)
                 AUTO_RECOVERY=false
-                show_gui "提示" --msgbox "已禁用自动恢复模式" 8 40
+                show_gui_msgbox "提示" "已禁用自动恢复模式" 8 40
                 ;;
             3)
                 create_autostart_script_gui
@@ -506,9 +562,7 @@ set_auto_recovery_mode_gui() {
 }
 
 create_autostart_script_gui() {
-    if ! show_gui "创建自启动脚本" \
-         --yesno "将创建开机自启动脚本，系统启动时自动恢复服务。\n\n是否继续？" \
-         10 50; then
+    if ! show_gui_yesno "创建自启动脚本" "将创建开机自启动脚本，系统启动时自动恢复服务。\n\n是否继续？" 10 50; then
         return
     fi
     
@@ -586,9 +640,7 @@ EOF
 }
 
 remove_autostart_script_gui() {
-    if ! show_gui "删除自启动脚本" \
-         --yesno "确定要删除开机自启动脚本吗？" \
-         8 40; then
+    if ! show_gui_yesno "删除自启动脚本" "确定要删除开机自启动脚本吗？" 8 40; then
         return
     fi
     
@@ -608,16 +660,14 @@ remove_autostart_script_gui() {
 
 view_service_logs_gui() {
     while true; do
-        choice=$(show_gui "查看服务日志" \
-                  --menu "\n请选择要查看的日志：" \
-                  12 60 5 \
+        choice=$(show_gui_menu "查看服务日志" 12 60 5 \
                   "1" "查看Docker日志" \
                   "2" "查看1Panel日志" \
                   "3" "查看系统日志" \
                   "4" "查看恢复日志" \
                   "5" "返回")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             return
         fi
         
@@ -853,9 +903,7 @@ backup_config() {
 
 system_optimization_gui() {
     while true; do
-        choice=$(show_gui "系统优化配置" \
-                  --menu "\n请选择要执行的优化操作：" \
-                  20 70 11 \
+        choice=$(show_gui_menu "系统优化配置" 20 70 10 \
                   "1" "更新软件包列表" \
                   "2" "升级现有软件包" \
                   "3" "安装运维工具包" \
@@ -867,7 +915,7 @@ system_optimization_gui() {
                   "9" "一键优化所有项目" \
                   "10" "返回主菜单")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             return
         fi
         
@@ -887,9 +935,7 @@ system_optimization_gui() {
 }
 
 update_packages_gui() {
-    if ! show_gui "更新软件包" \
-         --yesno "将更新系统软件包列表\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "更新软件包" "将更新系统软件包列表\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -903,9 +949,7 @@ update_packages_gui() {
 }
 
 upgrade_packages_gui() {
-    if ! show_gui "升级软件包" \
-         --yesno "将升级现有软件包\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "升级软件包" "将升级现有软件包\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -919,9 +963,7 @@ upgrade_packages_gui() {
 }
 
 install_tools_gui() {
-    if ! show_gui "安装运维工具" \
-         --yesno "将安装常用运维工具包\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "安装运维工具" "将安装常用运维工具包\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -942,9 +984,7 @@ install_tools_gui() {
 }
 
 setup_timezone_gui() {
-    if ! show_gui "设置时区" \
-         --yesno "将设置时区为上海并配置时间同步\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "设置时区" "将设置时区为上海并配置时间同步\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -964,9 +1004,7 @@ setup_timezone_gui() {
 }
 
 configure_ssh_gui() {
-    if ! show_gui "SSH安全加固" \
-         --yesno "将配置SSH安全加固设置\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "SSH安全加固" "将配置SSH安全加固设置\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -989,9 +1027,7 @@ configure_ssh_gui() {
 }
 
 optimize_kernel_gui() {
-    if ! show_gui "内核优化" \
-         --yesno "将优化内核参数\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "内核优化" "将优化内核参数\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -1024,9 +1060,7 @@ EOF
 }
 
 configure_resources_gui() {
-    if ! show_gui "资源限制" \
-         --yesno "将配置系统资源限制\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "资源限制" "将配置系统资源限制\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -1047,9 +1081,7 @@ EOF
 }
 
 configure_firewall_gui() {
-    if ! show_gui "防火墙配置" \
-         --yesno "将配置防火墙设置\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "防火墙配置" "将配置防火墙设置\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -1083,9 +1115,7 @@ configure_firewall_gui() {
 }
 
 full_optimization_gui() {
-    if ! show_gui "一键优化" \
-         --yesno "将执行所有系统优化操作\n\n是否继续？" \
-         8 40; then
+    if ! show_gui_yesno "一键优化" "将执行所有系统优化操作\n\n是否继续？" 8 40; then
         return
     fi
     
@@ -1167,16 +1197,12 @@ EOF
 install_docker_gui() {
     if check_docker_installed; then
         local docker_version=$(docker --version 2>/dev/null | cut -d' ' -f3 | tr -d ',' || echo "未知版本")
-        if ! show_gui "Docker状态" \
-             --yesno "Docker已经安装：\n版本: $docker_version\n\n是否重新安装？" \
-             10 50; then
+        if ! show_gui_yesno "Docker状态" "Docker已经安装：\n版本: $docker_version\n\n是否重新安装？" 10 50; then
             return
         fi
     fi
     
-    if ! show_gui "安装Docker" \
-         --yesno "将安装Docker容器引擎\n\n安装后会自动配置镜像加速器\n\n是否继续？" \
-         10 50; then
+    if ! show_gui_yesno "安装Docker" "将安装Docker容器引擎\n\n安装后会自动配置镜像加速器\n\n是否继续？" 10 50; then
         return
     fi
     
@@ -1246,16 +1272,12 @@ EOF
 
 install_1panel_gui() {
     if check_1panel_installed; then
-        if ! show_gui "1Panel状态" \
-             --yesno "1Panel面板已经安装！\n\n是否重新安装？" \
-             10 50; then
+        if ! show_gui_yesno "1Panel状态" "1Panel面板已经安装！\n\n是否重新安装？" 10 50; then
             return
         fi
     fi
     
-    if ! show_gui "安装1Panel" \
-         --yesno "将安装1Panel面板\n\n重要提示：\n1. 安装过程中需要手动确认（输入 y）\n2. 需要设置面板访问密码\n3. 默认访问地址: https://服务器IP:9090\n\n是否继续？" \
-         12 60; then
+    if ! show_gui_yesno "安装1Panel" "将安装1Panel面板\n\n重要提示：\n1. 安装过程中需要手动确认（输入 y）\n2. 需要设置面板访问密码\n3. 默认访问地址: https://服务器IP:9090\n\n是否继续？" 12 60; then
         return
     fi
     
@@ -1310,16 +1332,12 @@ install_1panel_gui() {
 
 install_baota_gui() {
     if [ -f "/etc/init.d/bt" ]; then
-        if ! show_gui "宝塔状态" \
-             --yesno "宝塔面板已经安装！\n\n是否重新安装？" \
-             10 50; then
+        if ! show_gui_yesno "宝塔状态" "宝塔面板已经安装！\n\n是否重新安装？" 10 50; then
             return
         fi
     fi
     
-    if ! show_gui "安装宝塔" \
-         --yesno "将安装宝塔面板\n\n重要提示：\n1. 安装过程需要5-10分钟\n2. 安装过程中需要确认（输入 y）\n3. 请保存显示的登录信息\n\n是否继续？" \
-         12 60; then
+    if ! show_gui_yesno "安装宝塔" "将安装宝塔面板\n\n重要提示：\n1. 安装过程需要5-10分钟\n2. 安装过程中需要确认（输入 y）\n3. 请保存显示的登录信息\n\n是否继续？" 12 60; then
         return
     fi
     
@@ -1378,9 +1396,7 @@ install_baota_gui() {
 # ====================== 完整安装 ======================
 
 full_installation_gui() {
-    if ! show_gui "完整安装" \
-         --yesno "将执行完整安装流程：\n1. 系统优化配置\n2. 安装Docker\n3. 安装1Panel面板\n\n是否继续？" \
-         10 50; then
+    if ! show_gui_yesno "完整安装" "将执行完整安装流程：\n1. 系统优化配置\n2. 安装Docker\n3. 安装1Panel面板\n\n是否继续？" 10 50; then
         return
     fi
     
@@ -1500,16 +1516,14 @@ system_integrity_check_gui() {
 
 uninstall_menu_gui() {
     while true; do
-        choice=$(show_gui "卸载工具" \
-                  --menu "\n请选择要卸载的软件：" \
-                  12 60 5 \
+        choice=$(show_gui_menu "卸载工具" 12 60 5 \
                   "1" "卸载Docker" \
                   "2" "卸载1Panel面板" \
                   "3" "卸载宝塔面板" \
                   "4" "清理所有安装" \
                   "5" "返回主菜单")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             return
         fi
         
@@ -1524,9 +1538,7 @@ uninstall_menu_gui() {
 }
 
 uninstall_docker_gui() {
-    if ! show_gui "卸载Docker" \
-         --yesno "确定要卸载Docker吗？" \
-         8 40; then
+    if ! show_gui_yesno "卸载Docker" "确定要卸载Docker吗？" 8 40; then
         return
     fi
     
@@ -1552,13 +1564,11 @@ uninstall_docker_gui() {
 
 uninstall_1panel_gui() {
     if ! check_1panel_installed; then
-        show_gui "提示" --msgbox "1Panel面板未安装" 8 40
+        show_gui_msgbox "提示" "1Panel面板未安装" 8 40
         return
     fi
     
-    if ! show_gui "卸载1Panel" \
-         --yesno "确定要卸载1Panel面板吗？" \
-         8 40; then
+    if ! show_gui_yesno "卸载1Panel" "确定要卸载1Panel面板吗？" 8 40; then
         return
     fi
     
@@ -1585,13 +1595,11 @@ uninstall_1panel_gui() {
 
 uninstall_baota_gui() {
     if [ ! -f "/etc/init.d/bt" ]; then
-        show_gui "提示" --msgbox "宝塔面板未安装" 8 40
+        show_gui_msgbox "提示" "宝塔面板未安装" 8 40
         return
     fi
     
-    if ! show_gui "卸载宝塔" \
-         --yesno "确定要卸载宝塔面板吗？" \
-         8 40; then
+    if ! show_gui_yesno "卸载宝塔" "确定要卸载宝塔面板吗？" 8 40; then
         return
     fi
     
@@ -1612,9 +1620,7 @@ uninstall_baota_gui() {
 }
 
 cleanup_all_gui() {
-    if ! show_gui "清理所有安装" \
-         --yesno "⚠ 警告：这将卸载所有通过本脚本安装的软件\n包括：\n1. Docker\n2. 1Panel面板\n3. 宝塔面板\n\n确定要清理所有安装吗？" \
-         12 60; then
+    if ! show_gui_yesno "清理所有安装" "⚠ 警告：这将卸载所有通过本脚本安装的软件\n包括：\n1. Docker\n2. 1Panel面板\n3. 宝塔面板\n\n确定要清理所有安装吗？" 12 60; then
         return
     fi
     
@@ -1622,15 +1628,25 @@ cleanup_all_gui() {
     warn "开始清理所有安装..."
     
     if check_1panel_installed; then
-        uninstall_1panel_gui
+        warn "卸载1Panel面板..."
+        systemctl stop 1panel 2>/dev/null
+        rm -rf /opt/1panel
+        rm -rf /usr/local/bin/1panel
+        rm -f /etc/systemd/system/1panel.service 2>/dev/null
     fi
     
     if [ -f "/etc/init.d/bt" ]; then
-        uninstall_baota_gui
+        warn "卸载宝塔面板..."
+        rm -rf /www/server/panel
+        rm -f /etc/init.d/bt
     fi
     
     if check_docker_installed; then
-        uninstall_docker_gui
+        warn "卸载Docker..."
+        systemctl stop docker 2>/dev/null
+        apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null
+        rm -rf /var/lib/docker
+        rm -rf /etc/docker
     fi
     
     info "清理临时文件..."
@@ -1643,9 +1659,7 @@ cleanup_all_gui() {
 }
 
 cleanup_temp_files_gui() {
-    if ! show_gui "清理临时文件" \
-         --yesno "确定要清理临时文件吗？" \
-         8 40; then
+    if ! show_gui_yesno "清理临时文件" "确定要清理临时文件吗？" 8 40; then
         return
     fi
     
@@ -1665,13 +1679,23 @@ cleanup_temp_files_gui() {
 main_menu_gui() {
     while true; do
         # 获取当前状态
-        local docker_status=$([ check_docker_installed ] && echo "✓ 已安装" || echo "○ 未安装")
-        local panel1_status=$([ check_1panel_installed ] && echo "✓ 已安装" || echo "○ 未安装")
-        local baota_status=$([ -f "/etc/init.d/bt" ] && echo "✓ 已安装" || echo "○ 未安装")
+        local docker_status="○ 未安装"
+        local panel1_status="○ 未安装"
+        local baota_status="○ 未安装"
         
-        choice=$(show_gui "主菜单" \
-                  --menu "\nUbuntu服务器部署工具 v$SCRIPT_VERSION\n\n当前状态：\n Docker: $docker_status\n 1Panel: $panel1_status\n 宝塔: $baota_status\n\n请选择要执行的操作：" \
-                  25 70 10 \
+        if check_docker_installed; then
+            docker_status="✓ 已安装"
+        fi
+        
+        if check_1panel_installed; then
+            panel1_status="✓ 已安装"
+        fi
+        
+        if [ -f "/etc/init.d/bt" ]; then
+            baota_status="✓ 已安装"
+        fi
+        
+        choice=$(show_gui_menu "主菜单" 25 70 10 \
                   "1" "系统优化配置" \
                   "2" "安装Docker" \
                   "3" "安装1Panel面板" \
@@ -1683,7 +1707,7 @@ main_menu_gui() {
                   "9" "清理临时文件" \
                   "0" "退出程序")
         
-        if [ $? -ne 0 ]; then
+        if [ -z "$choice" ]; then
             exit_program
             continue
         fi
@@ -1704,9 +1728,7 @@ main_menu_gui() {
 }
 
 exit_program() {
-    if show_gui "退出程序" \
-         --yesno "确定要退出吗？" \
-         8 40; then
+    if show_gui_yesno "退出程序" "确定要退出吗？" 8 40; then
         clear
         echo -e "${GREEN}感谢使用服务器部署工具！${NC}"
         echo -e "${YELLOW}日志文件: $INSTALL_LOG${NC}"
