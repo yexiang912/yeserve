@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # =============================================
-# Ubuntu 服务器一键部署脚本 (GUI修复版 v6.0)
+# Ubuntu 服务器一键部署脚本 (GUI修复完整版 v6.0)
 # =============================================
 
 # 颜色定义
@@ -570,61 +570,140 @@ create_autostart_script_gui() {
     info "创建开机自启动脚本..."
     
     local service_file="/etc/systemd/system/yx-deploy-recovery.service"
+    local recovery_script="/usr/local/bin/yx-deploy-recovery.sh"
     
+    # 检查是否已存在
+    if [ -f "$service_file" ]; then
+        echo -e "${YELLOW}检测到已存在的自启动服务，将覆盖...${NC}"
+    fi
+    
+    # 创建systemd服务文件
     cat > "$service_file" << EOF
 [Unit]
 Description=yx-deploy Auto Recovery Service
+Description=自动恢复Docker和面板服务
 After=network.target docker.service
 Wants=network.target
 
 [Service]
 Type=oneshot
-ExecStart=/bin/bash -c 'sleep 30 && /usr/local/bin/yx-deploy-recovery.sh'
+ExecStart=/bin/bash ${recovery_script}
 RemainAfterExit=yes
 User=root
 Group=root
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
     
-    cat > /usr/local/bin/yx-deploy-recovery.sh << 'EOF'
+    # 创建恢复脚本
+    cat > "$recovery_script" << 'EOF'
 #!/bin/bash
 # yx-deploy Auto Recovery Script
+# 在系统启动时自动恢复服务
 
-LOG_FILE="/var/log/yx-deploy/recovery.log"
-mkdir -p /var/log/yx-deploy 2>/dev/null
+LOG_FILE="/var/log/yx-deploy-gui/recovery.log"
 
-echo "$(date): 开始自动恢复服务..." >> "$LOG_FILE"
-sleep 10
+# 创建日志目录
+mkdir -p /var/log/yx-deploy-gui 2>/dev/null
 
+echo "==========================================" >> "$LOG_FILE"
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 开始自动恢复服务" >> "$LOG_FILE"
+echo "==========================================" >> "$LOG_FILE"
+
+# 等待网络就绪
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 等待网络就绪..." >> "$LOG_FILE"
+sleep 15
+
+# 1. 恢复Docker服务
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 检查Docker服务..." >> "$LOG_FILE"
 if command -v docker &>/dev/null; then
-    if ! systemctl is-active --quiet docker; then
-        systemctl start docker >> "$LOG_FILE" 2>&1
-        echo "$(date): 启动Docker服务" >> "$LOG_FILE"
+    if systemctl list-unit-files | grep -q "docker.service"; then
+        if ! systemctl is-active --quiet docker; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 启动Docker服务..." >> "$LOG_FILE"
+            systemctl start docker >> "$LOG_FILE" 2>&1
+            sleep 3
+            if systemctl is-active --quiet docker; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S'): Docker服务启动成功" >> "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S'): Docker服务启动失败" >> "$LOG_FILE"
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): Docker服务已在运行" >> "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S'): Docker服务未安装" >> "$LOG_FILE"
     fi
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): Docker命令不存在" >> "$LOG_FILE"
 fi
 
-if systemctl list-unit-files | grep -q "1panel.service"; then
-    if ! systemctl is-active --quiet 1panel; then
-        systemctl start 1panel >> "$LOG_FILE" 2>&1
-        echo "$(date): 启动1Panel服务" >> "$LOG_FILE"
+# 2. 恢复1Panel服务
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 检查1Panel服务..." >> "$LOG_FILE"
+if systemctl list-unit-files | grep -q "1panel.service" || [ -f "/usr/local/bin/1panel" ]; then
+    if systemctl list-unit-files | grep -q "1panel.service"; then
+        if ! systemctl is-active --quiet 1panel; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 启动1Panel服务..." >> "$LOG_FILE"
+            systemctl start 1panel >> "$LOG_FILE" 2>&1
+            sleep 3
+            if systemctl is-active --quiet 1panel; then
+                echo "$(date '+%Y-%m-%d %H:%M:%S'): 1Panel服务启动成功" >> "$LOG_FILE"
+            else
+                echo "$(date '+%Y-%m-%d %H:%M:%S'): 1Panel服务启动失败" >> "$LOG_FILE"
+            fi
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 1Panel服务已在运行" >> "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S'): 1Panel服务文件不存在" >> "$LOG_FILE"
     fi
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): 1Panel未安装" >> "$LOG_FILE"
 fi
 
+# 3. 恢复宝塔面板
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 检查宝塔面板..." >> "$LOG_FILE"
 if [ -f "/etc/init.d/bt" ]; then
     if ! /etc/init.d/bt status 2>/dev/null | grep -q "running"; then
+        echo "$(date '+%Y-%m-%d %H:%M:%S'): 启动宝塔面板..." >> "$LOG_FILE"
         /etc/init.d/bt start >> "$LOG_FILE" 2>&1
-        echo "$(date): 启动宝塔面板" >> "$LOG_FILE"
+        sleep 5
+        if /etc/init.d/bt status 2>/dev/null | grep -q "running"; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 宝塔面板启动成功" >> "$LOG_FILE"
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 宝塔面板启动失败" >> "$LOG_FILE"
+        fi
+    else
+        echo "$(date '+%Y-%m-%d %H:%M:%S'): 宝塔面板已在运行" >> "$LOG_FILE"
     fi
+else
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): 宝塔面板未安装" >> "$LOG_FILE"
 fi
 
-echo "$(date): 自动恢复服务完成" >> "$LOG_FILE"
+# 4. 恢复其他系统服务
+services=("chronyd" "ssh" "ufw")
+for service in "${services[@]}"; do
+    echo "$(date '+%Y-%m-%d %H:%M:%S'): 检查${service}服务..." >> "$LOG_FILE"
+    if systemctl list-unit-files | grep -q "${service}.service"; then
+        if ! systemctl is-active --quiet "$service"; then
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): 启动${service}服务..." >> "$LOG_FILE"
+            systemctl start "$service" >> "$LOG_FILE" 2>&1
+        else
+            echo "$(date '+%Y-%m-%d %H:%M:%S'): ${service}服务已在运行" >> "$LOG_FILE"
+        fi
+    fi
+done
+
+echo "$(date '+%Y-%m-%d %H:%M:%S'): 自动恢复服务完成" >> "$LOG_FILE"
+echo "==========================================" >> "$LOG_FILE"
 EOF
     
-    chmod +x /usr/local/bin/yx-deploy-recovery.sh
+    chmod +x "$recovery_script"
     chmod 644 "$service_file"
     
+    # 启用并启动服务
     systemctl daemon-reload
     systemctl enable yx-deploy-recovery.service 2>/dev/null
     systemctl start yx-deploy-recovery.service 2>/dev/null
@@ -633,8 +712,11 @@ EOF
     echo ""
     echo -e "${GREEN}服务已配置为开机自动启动${NC}"
     echo "服务名称: yx-deploy-recovery.service"
-    echo "恢复脚本: /usr/local/bin/yx-deploy-recovery.sh"
-    echo "日志文件: /var/log/yx-deploy/recovery.log"
+    echo "恢复脚本: $recovery_script"
+    echo "日志文件: /var/log/yx-deploy-gui/recovery.log"
+    echo ""
+    echo -e "${YELLOW}测试自启动服务状态：${NC}"
+    systemctl status yx-deploy-recovery.service --no-pager
     
     return_to_gui
 }
@@ -647,12 +729,17 @@ remove_autostart_script_gui() {
     exit_to_terminal
     info "删除开机自启动脚本..."
     
+    local service_file="/etc/systemd/system/yx-deploy-recovery.service"
+    local recovery_script="/usr/local/bin/yx-deploy-recovery.sh"
+    
+    # 停止并禁用服务
     systemctl stop yx-deploy-recovery.service 2>/dev/null
     systemctl disable yx-deploy-recovery.service 2>/dev/null
     systemctl daemon-reload
     
-    rm -f /etc/systemd/system/yx-deploy-recovery.service 2>/dev/null
-    rm -f /usr/local/bin/yx-deploy-recovery.sh 2>/dev/null
+    # 删除文件
+    rm -f "$service_file" 2>/dev/null
+    rm -f "$recovery_script" 2>/dev/null
     
     success "开机自启动脚本已删除"
     return_to_gui
@@ -693,8 +780,8 @@ view_service_logs_gui() {
             4)
                 exit_to_terminal
                 echo -e "${CYAN}恢复日志：${NC}"
-                if [ -f "/var/log/yx-deploy/recovery.log" ]; then
-                    tail -30 "/var/log/yx-deploy/recovery.log"
+                if [ -f "/var/log/yx-deploy-gui/recovery.log" ]; then
+                    tail -30 "/var/log/yx-deploy-gui/recovery.log"
                 else
                     echo "恢复日志文件不存在"
                 fi
