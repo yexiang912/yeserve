@@ -309,7 +309,12 @@ http://111.229.143.188:51854
 #### 1. **新手用户安全措施**
 ```bash
 # 仅使用基础版
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
+
+
+sudo wget -O /tmp/luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/luncher.sh
+sudo chmod +x /tmp/luncher.sh
+sudo /tmp/luncher.sh
+```
 
 # 基础备份
 sudo tar -czf backup_basic.tar.gz /etc/ssh /etc/apt
