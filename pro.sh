@@ -17,8 +17,6 @@ INSTALL_LOG="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
 DIALOG_TITLE="服务器专业部署工具 v$SCRIPT_VERSION"
 AUTO_RECOVERY=false
 
-DECODED_KEY="$(echo -e "\x31\x71\x31\x71\x31\x71\x31\x71\x79\x65")"
-
 validate_access() {
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${PURPLE}       服务器专业部署工具 Pro版           ${NC}"
@@ -35,17 +33,30 @@ validate_access() {
         echo ""
     fi
     
+    local salt="websoft9_pro_deploy_salt_2025"
     local expected_hash="be55972a216a75cad853f0df62441b548db7957e8e0f46a978e9b1942d430afe"
-    local input_hash=$(echo -n "$user_input" | sha256sum | awk '{print $1}')
+    local salted_input="${salt}${user_input}"
+    local input_hash=$(echo -n "$salted_input" | sha256sum | awk '{print $1}')
     
     if [ "$input_hash" != "$expected_hash" ]; then
         echo -e "${RED}❌ 访问验证失败！${NC}"
+        echo -e "${YELLOW}请检查访问代码是否正确${NC}"
+        
+        local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+        local ip_addr=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "unknown")
+        echo "[${timestamp}] FAILED_ACCESS: IP=$ip_addr, InputHash=${input_hash:0:16}..." >> "$LOG_DIR/access.log"
+        
+        sleep 2
         exit 1
     fi
     
+    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local ip_addr=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "unknown")
+    echo "[${timestamp}] SUCCESS_ACCESS: IP=$ip_addr" >> "$LOG_DIR/access.log"
+    
     echo -e "${GREEN}✅ 访问验证通过！${NC}"
     echo ""
-    sleep 2
+    sleep 1
 }
 
 init_log_system() {
@@ -225,7 +236,7 @@ return_to_gui() {
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${GREEN}操作完成！按回车键返回GUI界面...${NC}"
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    read -p ""
+    read -p "" dummy
 }
 
 check_network() {
@@ -333,595 +344,6 @@ check_1panel_installed() {
     else
         return 1
     fi
-}
-
-declare -A SERVER_TYPES=(
-    ["game"]="游戏服务器"
-    ["web"]="Web服务器"
-    ["blog"]="博客网站"
-    ["database"]="数据库服务器"
-    ["app"]="应用服务器"
-    ["custom"]="自定义服务器"
-)
-
-declare -A SOFTWARE_PACKAGES=(
-    ["docker"]="Docker容器引擎"
-    ["mysql"]="MySQL数据库"
-    ["postgresql"]="PostgreSQL数据库"
-    ["redis"]="Redis缓存"
-    ["mongodb"]="MongoDB数据库"
-    ["nginx"]="Nginx Web服务器"
-    ["nodejs"]="Node.js运行环境"
-    ["java"]="Java运行环境"
-    ["python"]="Python环境"
-)
-
-declare -A CONTROL_PANELS=(
-    ["1panel"]="1Panel面板"
-    ["baota"]="宝塔面板"
-    ["none"]="不安装面板"
-)
-
-declare -A DEPLOYMENT_TEMPLATES=(
-    ["game"]="docker mysql redis java"
-    ["web"]="docker nginx mysql redis nodejs"
-    ["blog"]="docker nginx mysql redis"
-    ["database"]="mysql postgresql redis mongodb"
-    ["app"]="docker java python mysql redis"
-    ["custom"]=""
-)
-
-select_deployment_type() {
-    while true; do
-        choice=$(show_gui_menu "选择服务器类型" 15 60 7 \
-                  "1" "游戏服务器" \
-                  "2" "Web服务器" \
-                  "3" "博客网站" \
-                  "4" "数据库服务器" \
-                  "5" "应用服务器" \
-                  "6" "自定义服务器" \
-                  "7" "返回主菜单")
-        
-        if [ -z "$choice" ]; then
-            echo "cancel"
-            return 1
-        fi
-        
-        case $choice in
-            1) echo "game"; return 0 ;;
-            2) echo "web"; return 0 ;;
-            3) echo "blog"; return 0 ;;
-            4) echo "database"; return 0 ;;
-            5) echo "app"; return 0 ;;
-            6) echo "custom"; return 0 ;;
-            7) echo "cancel"; return 1 ;;
-        esac
-    done
-}
-
-select_software_packages() {
-    local selected_type="$1"
-    local default_packages="${DEPLOYMENT_TEMPLATES[$selected_type]}"
-    
-    local checklist_items=()
-    for key in "${!SOFTWARE_PACKAGES[@]}"; do
-        local name="${SOFTWARE_PACKAGES[$key]}"
-        local status="off"
-        
-        if [ "$selected_type" != "custom" ] && [[ " $default_packages " == *" $key "* ]]; then
-            status="on"
-        fi
-        
-        checklist_items+=("$key" "$name" "$status")
-    done
-    
-    selected=$(show_gui_checklist "选择软件包" 20 70 10 "${checklist_items[@]}")
-    
-    if [ -z "$selected" ]; then
-        echo ""
-        return 1
-    fi
-    
-    echo "$selected" | sed "s/\"//g"
-    return 0
-}
-
-select_control_panel() {
-    local checklist_items=()
-    
-    for key in "${!CONTROL_PANELS[@]}"; do
-        local name="${CONTROL_PANELS[$key]}"
-        local status="off"
-        
-        if [ "$key" = "1panel" ]; then
-            status="on"
-        fi
-        
-        checklist_items+=("$key" "$name" "$status")
-    done
-    
-    selected=$(show_gui_checklist "选择控制面板" 10 50 5 "${checklist_items[@]}")
-    
-    if [ -z "$selected" ]; then
-        echo "none"
-        return 0
-    fi
-    
-    echo "$selected" | sed "s/\"//g"
-    return 0
-}
-
-review_deployment_plan() {
-    local server_type="$1"
-    local software_packages="$2"
-    local control_panel="$3"
-    
-    exit_to_terminal
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo -e "${PURPLE}           部署方案预览                    ${NC}"
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo ""
-    
-    echo -e "${BLUE}服务器类型: ${NC}${SERVER_TYPES[$server_type]}"
-    echo ""
-    
-    echo -e "${BLUE}选择的软件包: ${NC}"
-    if [ -z "$software_packages" ]; then
-        echo "  无"
-    else
-        for pkg in $software_packages; do
-            if [ -n "${SOFTWARE_PACKAGES[$pkg]}" ]; then
-                echo "  ✓ ${SOFTWARE_PACKAGES[$pkg]}"
-            fi
-        done
-    fi
-    echo ""
-    
-    echo -e "${BLUE}控制面板: ${NC}"
-    if [ "$control_panel" = "none" ]; then
-        echo "  无"
-    else
-        echo "  ✓ ${CONTROL_PANELS[$control_panel]}"
-    fi
-    echo ""
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    
-    if ! show_gui_yesno "确认部署方案" "是否确认此部署方案？" 10 50; then
-        return 1
-    fi
-    
-    return 0
-}
-
-install_software_package() {
-    local package="$1"
-    
-    case $package in
-        docker)
-            install_docker_ce
-            ;;
-        mysql)
-            install_mysql
-            ;;
-        postgresql)
-            install_postgresql
-            ;;
-        redis)
-            install_redis
-            ;;
-        mongodb)
-            install_mongodb
-            ;;
-        nginx)
-            install_nginx
-            ;;
-        nodejs)
-            install_nodejs
-            ;;
-        java)
-            install_java
-            ;;
-        python)
-            install_python
-            ;;
-        *)
-            warn "未知软件包: $package"
-            return 1
-            ;;
-    esac
-}
-
-install_mysql() {
-    info "安装MySQL数据库..."
-    
-    apt-get update
-    apt-get install -y mysql-server
-    
-    if systemctl is-active --quiet mysql; then
-        success "MySQL安装成功"
-        
-        echo -e "${YELLOW}运行MySQL安全配置...${NC}"
-        mysql_secure_installation <<EOF
-y
-y
-y
-y
-y
-EOF
-        
-        log "MySQL安全配置完成"
-    else
-        error "MySQL安装失败"
-        return 1
-    fi
-}
-
-install_postgresql() {
-    info "安装PostgreSQL数据库..."
-    
-    apt-get install -y postgresql postgresql-contrib
-    
-    if systemctl is-active --quiet postgresql; then
-        success "PostgreSQL安装成功"
-        
-        echo -e "${YELLOW}设置PostgreSQL密码...${NC}"
-        sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';" 2>/dev/null || true
-        
-        log "PostgreSQL配置完成"
-    else
-        error "PostgreSQL安装失败"
-        return 1
-    fi
-}
-
-install_redis() {
-    info "安装Redis缓存..."
-    
-    apt-get install -y redis-server
-    
-    sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/' /etc/redis/redis.conf 2>/dev/null || true
-    
-    systemctl restart redis-server
-    
-    if systemctl is-active --quiet redis-server; then
-        success "Redis安装成功"
-    else
-        error "Redis安装失败"
-        return 1
-    fi
-}
-
-install_mongodb() {
-    info "安装MongoDB数据库..."
-    
-    wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/mongodb.gpg >/dev/null
-    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-    
-    apt-get update
-    apt-get install -y mongodb-org
-    
-    systemctl start mongod
-    systemctl enable mongod
-    
-    if systemctl is-active --quiet mongod; then
-        success "MongoDB安装成功"
-    else
-        error "MongoDB安装失败"
-        return 1
-    fi
-}
-
-install_nginx() {
-    info "安装Nginx Web服务器..."
-    
-    apt-get install -y nginx
-    
-    mkdir -p /var/www/html
-    echo "<h1>Welcome to Nginx Server</h1>" > /var/www/html/index.html
-    
-    systemctl restart nginx
-    
-    if systemctl is-active --quiet nginx; then
-        success "Nginx安装成功"
-        
-        local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
-        echo -e "${GREEN}Nginx访问地址: http://${ip_address}${NC}"
-    else
-        error "Nginx安装失败"
-        return 1
-    fi
-}
-
-install_nodejs() {
-    info "安装Node.js运行环境..."
-    
-    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-    apt-get install -y nodejs
-    
-    npm install -g npm yarn pm2
-    
-    node_version=$(node --version 2>/dev/null || echo "未知")
-    npm_version=$(npm --version 2>/dev/null || echo "未知")
-    
-    success "Node.js安装成功"
-    echo -e "${GREEN}Node.js版本: $node_version${NC}"
-    echo -e "${GREEN}npm版本: $npm_version${NC}"
-}
-
-install_java() {
-    info "安装Java运行环境..."
-    
-    apt-get install -y default-jdk default-jre
-    
-    java_version=$(java -version 2>&1 | head -n 1 | cut -d'"' -f2 2>/dev/null || echo "未知")
-    
-    success "Java安装成功"
-    echo -e "${GREEN}Java版本: $java_version${NC}"
-}
-
-install_python() {
-    info "安装Python环境..."
-    
-    apt-get install -y python3 python3-pip python3-venv
-    
-    pip3 install --upgrade pip
-    pip3 install virtualenv flask django numpy pandas 2>/dev/null || true
-    
-    python_version=$(python3 --version 2>/dev/null || echo "未知")
-    
-    success "Python安装成功"
-    echo -e "${GREEN}Python版本: $python_version${NC}"
-}
-
-execute_deployment_plan() {
-    local server_type="$1"
-    local software_packages="$2"
-    local control_panel="$3"
-    
-    exit_to_terminal
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo -e "${PURPLE}           开始部署执行                    ${NC}"
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo ""
-    
-    info "服务器类型: ${SERVER_TYPES[$server_type]}"
-    info "开始系统基础优化..."
-    
-    apt-get update -y
-    apt-get upgrade -y
-    apt-get install -y curl wget vim git net-tools htop ufw chrony
-    
-    timedatectl set-timezone Asia/Shanghai
-    
-    ufw --force enable
-    ufw allow ssh
-    ufw allow 80/tcp
-    ufw allow 443/tcp
-    
-    success "系统基础优化完成"
-    echo ""
-    
-    for package in $software_packages; do
-        if [ -n "$package" ] && [ "$package" != "none" ]; then
-            show_separator
-            info "安装: ${SOFTWARE_PACKAGES[$package]}"
-            install_software_package "$package"
-            show_separator
-            echo ""
-        fi
-    done
-    
-    if [ "$control_panel" != "none" ] && [ -n "$control_panel" ]; then
-        show_separator
-        info "安装控制面板: ${CONTROL_PANELS[$control_panel]}"
-        
-        case $control_panel in
-            "1panel")
-                install_1panel_gui
-                ;;
-            "baota")
-                install_baota_gui
-                ;;
-        esac
-        show_separator
-    fi
-    
-    echo ""
-    echo -e "${GREEN}══════════════════════════════════════════════${NC}"
-    echo -e "${GREEN}           部署完成！                        ${NC}"
-    echo -e "${GREEN}══════════════════════════════════════════════${NC}"
-    echo ""
-    
-    local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
-    
-    echo -e "${BLUE}服务器信息:${NC}"
-    echo "  IP地址: $ip_address"
-    echo "  系统: $(lsb_release -ds 2>/dev/null || grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
-    echo ""
-    
-    echo -e "${BLUE}已安装的服务:${NC}"
-    for package in $software_packages; do
-        if [ -n "$package" ] && [ "$package" != "none" ]; then
-            echo "  ✓ ${SOFTWARE_PACKAGES[$package]}"
-        fi
-    done
-    
-    if [ "$control_panel" != "none" ] && [ -n "$control_panel" ]; then
-        echo "  ✓ ${CONTROL_PANELS[$control_panel]}"
-    fi
-    echo ""
-    
-    echo -e "${BLUE}访问信息:${NC}"
-    for package in $software_packages; do
-        case $package in
-            "nginx")
-                echo "  Nginx: http://$ip_address"
-                ;;
-        esac
-    done
-    
-    case $control_panel in
-        "1panel")
-            echo "  1Panel: https://$ip_address:9090"
-            echo "  用户名: admin"
-            ;;
-        "baota")
-            echo "  宝塔面板: http://$ip_address:8888"
-            ;;
-    esac
-    
-    echo ""
-    echo -e "${YELLOW}安装日志: $INSTALL_LOG${NC}"
-    
-    return_to_gui
-}
-
-deploy_by_server_type() {
-    local server_type=$(select_deployment_type)
-    
-    if [ "$server_type" = "cancel" ] || [ -z "$server_type" ]; then
-        return
-    fi
-    
-    local software_packages=$(select_software_packages "$server_type")
-    if [ $? -ne 0 ] && [ -z "$software_packages" ]; then
-        warn "未选择任何软件包"
-        return
-    fi
-    
-    local control_panel=$(select_control_panel)
-    
-    if review_deployment_plan "$server_type" "$software_packages" "$control_panel"; then
-        execute_deployment_plan "$server_type" "$software_packages" "$control_panel"
-    else
-        log "部署已取消"
-    fi
-}
-
-deploy_custom_packages() {
-    local server_type="custom"
-    
-    local software_packages=$(select_software_packages "$server_type")
-    if [ $? -ne 0 ] && [ -z "$software_packages" ]; then
-        warn "未选择任何软件包"
-        return
-    fi
-    
-    local control_panel=$(select_control_panel)
-    
-    if review_deployment_plan "$server_type" "$software_packages" "$control_panel"; then
-        execute_deployment_plan "$server_type" "$software_packages" "$control_panel"
-    else
-        log "部署已取消"
-    fi
-}
-
-deploy_control_panel_only() {
-    local server_type="custom"
-    local software_packages=""
-    
-    local control_panel=$(select_control_panel)
-    
-    if [ "$control_panel" = "none" ]; then
-        warn "未选择任何控制面板"
-        return
-    fi
-    
-    if review_deployment_plan "$server_type" "$software_packages" "$control_panel"; then
-        execute_deployment_plan "$server_type" "$software_packages" "$control_panel"
-    else
-        log "部署已取消"
-    fi
-}
-
-view_deployment_templates() {
-    exit_to_terminal
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo -e "${PURPLE}           部署方案模板                    ${NC}"
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo ""
-    
-    for type in "${!DEPLOYMENT_TEMPLATES[@]}"; do
-        echo -e "${BLUE}${SERVER_TYPES[$type]}:${NC}"
-        local packages="${DEPLOYMENT_TEMPLATES[$type]}"
-        
-        if [ -z "$packages" ]; then
-            echo "  自定义选择"
-        else
-            for pkg in $packages; do
-                if [ -n "${SOFTWARE_PACKAGES[$pkg]}" ]; then
-                    echo "  ✓ ${SOFTWARE_PACKAGES[$pkg]}"
-                fi
-            done
-        fi
-        echo ""
-    done
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    
-    return_to_gui
-}
-
-view_deployment_history() {
-    if [ ! -f "$INSTALL_LOG" ]; then
-        show_gui_msgbox "部署历史" "暂无部署历史记录" 8 40
-        return
-    fi
-    
-    exit_to_terminal
-    
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo -e "${PURPLE}           部署历史记录                    ${NC}"
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    echo ""
-    
-    grep -E "(开始部署执行|服务器类型:|选择的软件包:|控制面板:|部署完成)" "$INSTALL_LOG" | tail -20 2>/dev/null || echo "暂无详细部署记录"
-    
-    echo ""
-    echo -e "${CYAN}══════════════════════════════════════════════${NC}"
-    
-    return_to_gui
-}
-
-server_deployment_menu() {
-    while true; do
-        choice=$(show_gui_menu "服务器部署方案" 15 60 7 \
-                  "1" "选择服务器类型部署" \
-                  "2" "自定义软件包部署" \
-                  "3" "仅安装控制面板" \
-                  "4" "查看部署模板" \
-                  "5" "部署历史记录" \
-                  "6" "返回主菜单")
-        
-        if [ -z "$choice" ]; then
-            return
-        fi
-        
-        case $choice in
-            1)
-                deploy_by_server_type
-                ;;
-            2)
-                deploy_custom_packages
-                ;;
-            3)
-                deploy_control_panel_only
-                ;;
-            4)
-                view_deployment_templates
-                ;;
-            5)
-                view_deployment_history
-                ;;
-            6)
-                return
-                ;;
-        esac
-    done
 }
 
 install_docker_ce() {
@@ -1046,6 +468,244 @@ install_baota_gui() {
     fi
     
     return_to_gui
+}
+
+install_xiaopi_gui() {
+    if [ -f "/usr/bin/xp" ]; then
+        if ! show_gui_yesno "小皮状态" "小皮面板已经安装！\n\n是否重新安装？" 10 50; then
+            return
+        fi
+    fi
+    
+    if ! show_gui_yesno "安装小皮" "将安装小皮面板\n\n重要提示：\n1. 安装过程需要3-5分钟\n2. 默认访问地址: http://服务器IP:9080\n3. 默认账号: admin 密码: admin\n\n是否继续？" 12 60; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装小皮面板..."
+    
+    if [ -f /usr/bin/curl ]; then
+        curl -O https://dl.xp.cn/dl/xp/install.sh
+    else
+        wget -O install.sh https://dl.xp.cn/dl/xp/install.sh
+    fi
+    
+    bash install.sh
+    
+    sleep 5
+    
+    if [ -f "/usr/bin/xp" ]; then
+        success "✅ 小皮面板安装成功！"
+        local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null)
+        echo -e "${GREEN}访问地址: http://${ip_address}:9080${NC}"
+        echo -e "${GREEN}默认账号: admin 密码: admin${NC}"
+    else
+        error "❌ 小皮面板安装失败！"
+    fi
+    
+    return_to_gui
+}
+
+install_amh_gui() {
+    if [ -f "/usr/local/amh/amh" ]; then
+        if ! show_gui_yesno "AMH状态" "AMH面板已经安装！\n\n是否重新安装？" 10 50; then
+            return
+        fi
+    fi
+    
+    if ! show_gui_yesno "安装AMH" "将安装AMH面板\n\n重要提示：\n1. 安装过程需要1-3分钟\n2. 需要纯净系统(Debian/Centos/Ubuntu)\n3. 安装后请保存显示的登录信息\n\n是否继续？" 12 60; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装AMH面板..."
+    
+    wget https://dl.amh.sh/amh.sh && bash amh.sh
+    
+    sleep 5
+    
+    if [ -f "/usr/local/amh/amh" ]; then
+        success "✅ AMH面板安装成功！"
+        local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null)
+        echo -e "${GREEN}访问地址: http://${ip_address}:8888${NC}"
+    else
+        error "❌ AMH面板安装失败！"
+    fi
+    
+    return_to_gui
+}
+
+install_websoft9_gui() {
+    if [ -f "/opt/websoft9/websoft9" ]; then
+        if ! show_gui_yesno "Websoft9状态" "Websoft9已经安装！\n\n是否重新安装？" 10 50; then
+            return
+        fi
+    fi
+    
+    if ! show_gui_yesno "安装Websoft9" "将安装Websoft9应用管理器\n\n安装命令：\nwget -O install.sh https://artifact.websoft9.com/release/websoft9/install.sh && bash install.sh\n\n是否继续？" 12 60; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装Websoft9..."
+    
+    wget -O install.sh https://artifact.websoft9.com/release/websoft9/install.sh && bash install.sh
+    
+    sleep 5
+    
+    if [ -f "/opt/websoft9/websoft9" ]; then
+        success "✅ Websoft9安装成功！"
+        local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null)
+        echo -e "${GREEN}访问地址: http://${ip_address}:9000${NC}"
+    else
+        error "❌ Websoft9安装失败！"
+    fi
+    
+    return_to_gui
+}
+
+install_development_tools_gui() {
+    if ! show_gui_yesno "安装开发工具" "将安装常用开发环境\n包括：\n1. Node.js运行环境\n2. Python环境\n3. Java运行环境\n4. PHP环境\n\n是否继续？" 12 60; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装开发工具..."
+    
+    info "安装Node.js运行环境..."
+    curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+    apt-get install -y nodejs
+    npm install -g npm yarn pm2
+    
+    info "安装Python环境..."
+    apt-get install -y python3 python3-pip python3-venv
+    pip3 install --upgrade pip
+    pip3 install virtualenv flask django numpy pandas 2>/dev/null || true
+    
+    info "安装Java运行环境..."
+    apt-get install -y default-jdk default-jre
+    
+    info "安装PHP环境..."
+    apt-get install -y php php-cli php-fpm php-mysql php-curl php-gd php-mbstring php-xml php-zip
+    
+    success "✅ 开发工具安装完成！"
+    
+    echo -e "${GREEN}Node.js版本: $(node --version 2>/dev/null || echo '未知')${NC}"
+    echo -e "${GREEN}Python版本: $(python3 --version 2>/dev/null || echo '未知')${NC}"
+    echo -e "${GREEN}Java版本: $(java -version 2>&1 | head -n 1 | cut -d'"' -f2 2>/dev/null || echo '未知')${NC}"
+    echo -e "${GREEN}PHP版本: $(php --version 2>/dev/null | head -n 1 || echo '未知')${NC}"
+    
+    return_to_gui
+}
+
+install_database_tools_gui() {
+    if ! show_gui_yesno "安装数据库" "将安装常用数据库\n包括：\n1. MySQL数据库\n2. PostgreSQL数据库\n3. Redis缓存\n4. MongoDB数据库\n\n是否继续？" 12 60; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装数据库工具..."
+    
+    info "安装MySQL数据库..."
+    apt-get install -y mysql-server
+    if systemctl is-active --quiet mysql; then
+        mysql_secure_installation <<EOF
+y
+y
+y
+y
+y
+EOF
+    fi
+    
+    info "安装PostgreSQL数据库..."
+    apt-get install -y postgresql postgresql-contrib
+    if systemctl is-active --quiet postgresql; then
+        sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD 'postgres';" 2>/dev/null || true
+    fi
+    
+    info "安装Redis缓存..."
+    apt-get install -y redis-server
+    sed -i 's/bind 127.0.0.1 ::1/bind 0.0.0.0/' /etc/redis/redis.conf 2>/dev/null || true
+    systemctl restart redis-server
+    
+    info "安装MongoDB数据库..."
+    wget -qO - https://www.mongodb.org/static/pgp/server-7.0.asc | gpg --dearmor | tee /etc/apt/trusted.gpg.d/mongodb.gpg >/dev/null
+    echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu $(lsb_release -cs)/mongodb-org/7.0 multiverse" | tee /etc/apt/sources.list.d/mongodb-org-7.0.list
+    apt-get update
+    apt-get install -y mongodb-org
+    systemctl start mongod
+    systemctl enable mongod
+    
+    success "✅ 数据库工具安装完成！"
+    return_to_gui
+}
+
+install_web_servers_gui() {
+    if ! show_gui_yesno "安装Web服务器" "将安装常用Web服务器\n包括：\n1. Nginx Web服务器\n2. Apache Web服务器\n\n是否继续？" 10 50; then
+        return
+    fi
+    
+    exit_to_terminal
+    
+    info "开始安装Web服务器..."
+    
+    info "安装Nginx Web服务器..."
+    apt-get install -y nginx
+    mkdir -p /var/www/html
+    echo "<h1>Welcome to Nginx Server</h1>" > /var/www/html/index.html
+    systemctl restart nginx
+    
+    info "安装Apache Web服务器..."
+    apt-get install -y apache2
+    echo "<h1>Welcome to Apache Server</h1>" > /var/www/html/index.html
+    systemctl restart apache2
+    
+    success "✅ Web服务器安装完成！"
+    
+    local ip_address=$(hostname -I | awk '{print $1}' 2>/dev/null || echo "localhost")
+    echo -e "${GREEN}Nginx访问地址: http://${ip_address}${NC}"
+    echo -e "${GREEN}Apache访问地址: http://${ip_address}:8080${NC}"
+    
+    return_to_gui
+}
+
+server_app_install_menu() {
+    while true; do
+        choice=$(show_gui_menu "服务器应用安装" 20 70 12 \
+                  "1" "安装Docker容器引擎" \
+                  "2" "安装1Panel面板" \
+                  "3" "安装宝塔面板" \
+                  "4" "安装小皮面板" \
+                  "5" "安装AMH面板" \
+                  "6" "安装Websoft9" \
+                  "7" "安装开发工具环境" \
+                  "8" "安装数据库工具" \
+                  "9" "安装Web服务器" \
+                  "10" "返回主菜单")
+        
+        if [ -z "$choice" ]; then
+            return
+        fi
+        
+        case $choice in
+            1) install_docker_ce ;;
+            2) install_1panel_gui ;;
+            3) install_baota_gui ;;
+            4) install_xiaopi_gui ;;
+            5) install_amh_gui ;;
+            6) install_websoft9_gui ;;
+            7) install_development_tools_gui ;;
+            8) install_database_tools_gui ;;
+            9) install_web_servers_gui ;;
+            10) return ;;
+        esac
+    done
 }
 
 system_optimization_gui() {
@@ -1904,15 +1564,12 @@ cleanup_temp_files_gui() {
 main_menu_gui() {
     while true; do
         choice=$(show_gui_menu "主菜单 Pro版" 25 70 10 \
-                  "1" "服务器部署方案" \
+                  "1" "服务器应用安装" \
                   "2" "系统优化配置" \
-                  "3" "安装Docker" \
-                  "4" "安装1Panel面板" \
-                  "5" "安装宝塔面板" \
-                  "6" "快速启动管理器" \
-                  "7" "系统状态检查" \
-                  "8" "卸载工具" \
-                  "9" "清理临时文件" \
+                  "3" "快速启动管理器" \
+                  "4" "系统状态检查" \
+                  "5" "卸载工具" \
+                  "6" "清理临时文件" \
                   "0" "退出程序")
         
         if [ -z "$choice" ]; then
@@ -1921,15 +1578,12 @@ main_menu_gui() {
         fi
         
         case $choice in
-            1) server_deployment_menu ;;
+            1) server_app_install_menu ;;
             2) system_optimization_gui ;;
-            3) install_docker_ce ;;
-            4) install_1panel_gui ;;
-            5) install_baota_gui ;;
-            6) quick_start_menu ;;
-            7) system_integrity_check_gui ;;
-            8) uninstall_menu_gui ;;
-            9) cleanup_temp_files_gui ;;
+            3) quick_start_menu ;;
+            4) system_integrity_check_gui ;;
+            5) uninstall_menu_gui ;;
+            6) cleanup_temp_files_gui ;;
             0) exit_program ;;
         esac
     done
@@ -2039,8 +1693,8 @@ confirm_execution_gui() {
     
     echo -e "${CYAN}系统信息：${NC}"
     echo "  OS: $(lsb_release -ds 2>/dev/null || grep "PRETTY_NAME" /etc/os-release | cut -d'"' -f2)"
-    echo "  内核: $(uname -r)"
-    echo "  架构: $(uname -m)"
+    echo "   内核: $(uname -r)"
+    echo "   架构: $(uname -m)"
     echo ""
     
     echo -e "${YELLOW}⚠  警告：本脚本将修改系统配置并安装软件${NC}"
@@ -2053,7 +1707,7 @@ confirm_execution_gui() {
     check_disk_space
     check_network
     
-    read -p "按回车键进入主菜单，或按 Ctrl+C 退出... "
+    read -p "按回车键进入主菜单，或按 Ctrl+C 退出... " dummy
 }
 
 main() {
