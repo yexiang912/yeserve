@@ -33,8 +33,10 @@ validate_access() {
         echo ""
     fi
     
-local expected_hash="be55972a216a75cad853f0df62441b548db7957e8e0f46a978e9b1942d430afe"
-local input_hash=$(echo -n "$user_input" | sha256sum | awk '{print $1}')
+    local salt="websoft9_pro_deploy_salt_2025"
+    local expected_hash="d60a5b8f3c7e2a1f9b4d8c7a6e5f4b3c2d1e0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0"
+    local salted_input="${salt}${user_input}"
+    local input_hash=$(echo -n "$salted_input" | sha256sum | awk '{print $1}')
     
     if [ "$input_hash" != "$expected_hash" ]; then
         echo -e "${RED}❌ 访问验证失败！${NC}"
