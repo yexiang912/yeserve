@@ -59,13 +59,10 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 
 ---
 
-### 3. **专业版 - `pro.sh`**
-**定位：高级功能，需要授权**
+### 3. **专业版 - `servepro.sh`**
+**定位：高级功能，需要授权.密钥不公开**
 
-```bash
-# 一键拉取运行（yx原创Pro版）
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
-```
+
 ```bash
 #拉取运行双语言高级版
 sudo wget -O /tmp/servepro.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh
@@ -119,7 +116,9 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
 
 # Pro版：专业功能（需密钥）
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
+sudo wget -O /tmp/servepro.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh
+sudo chmod +x /tmp/servepro.sh
+sudo /tmp/servepro.sh
 ```
 
 ### 方式二：下载本地运行
@@ -171,7 +170,7 @@ sudo bash serveui.sh
 - **服务监控与恢复** - 实时监控，自动重启
 
 ### 4. **Pro版专属功能**
-- **服务器类型模板** - 游戏/Web/数据库等专业模板
+- **更多工具更多面板的安装** - 提供更多工具和面板安装
 - **软件包自定义选择** - 按需安装，灵活配置
 - **部署方案管理** - 保存和复用部署方案
 - **历史记录查看** - 完整操作历史追踪
@@ -205,9 +204,9 @@ yeserve/ (yx原创项目)
 - 🐳 **Docker容器引擎** - 完整Docker环境
 - 🎛️ **1Panel面板** - 现代化管理面板
 - 🗼 **宝塔面板** - 国内流行面板
-- ⚡ **小皮面板** - PHP集成环境
-- 🛡️ **AMH面板** - 轻量级面板
-- 🌐 **Websoft9** - 应用管理器
+- ⚡ **小皮面板** - PHP集成环境(Pro版本可能付费)
+- 🛡️ **AMH面板** - 轻量级面板(Pro版本可能付费)
+- 🌐 **Websoft9** - 应用管理器(Pro版本可能付费)
 - 💻 **开发工具环境** - Node.js/Python/Java/PHP
 - 🗄️ **数据库工具** - MySQL/PostgreSQL/Redis/MongoDB
 - 🌍 **Web服务器** - Nginx/Apache
@@ -250,9 +249,9 @@ yeserve/ (yx原创项目)
 |----------|----------|------|
 | **新手用户** | `serveui.sh` | 完整GUI界面，操作简单，功能全面 |
 | **快速部署** | `yeserve.sh` | 简洁快速，基础功能齐全 |
-| **专业运维** | `pro.sh` | 高级功能，专业监控，企业级特性 |
+| **专业运维** | `servepro.sh` | 高级功能，专业监控，企业级特性 |
 | **测试环境** | `serveui.sh` | 功能完整，适合测试各种配置 |
-| **生产环境** | `pro.sh` | 安全稳定，监控完善，可靠性高 |
+| **生产环境** | `servepro.sh` | 安全稳定，监控完善，可靠性高 |
 
 ### 部署流程建议
 
@@ -265,7 +264,7 @@ yeserve/ (yx原创项目)
 2. **生产环境部署**
    ```bash
    # 生产环境使用Pro版
-   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
+   sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh)"
    ```
 
 3. **定期维护**
@@ -376,13 +375,13 @@ yeserve/ (yx原创项目)
 ## 🔄 更新计划
 
 ### 近期更新
-- [ ] 更多面板支持
+- [yes ] 更多面板支持
 - [ ] 容器编排工具
 - [ ] 监控报警系统
 - [ ] 备份恢复增强
 
 ### 长期规划
-- [ ] 多语言支持
+- [ yes  多语言支持
 - [ ] 云端管理功能
 - [ ] 移动端应用
 - [ ] 插件生态系统
