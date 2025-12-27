@@ -69,6 +69,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 ```bash
 # 拉取运行双语言高级版
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh)"
+```
 **核心功能：**
 - 🔒 **访问验证系统** - 专业授权机制
 - 📊 **服务监控** - 实时状态监控
