@@ -17,11 +17,6 @@ INSTALL_LOG="${LOG_DIR}/install_$(date +%Y%m%d_%H%M%S).log"
 DIALOG_TITLE="服务器专业部署工具 v$SCRIPT_VERSION"
 AUTO_RECOVERY=false
 
-问题是脚本中使用了盐值 `websoft9_pro_deploy_salt_2025`，但纯哈希值 `be55972a216a75cad853f0df62441b548db7957e8e0f46a978e9b1942d430afe` 只对应密码 `1q1q1q1qye`，没有加上盐值。
-
-修复验证函数，移除盐值：
-
-```bash
 validate_access() {
     echo -e "${CYAN}══════════════════════════════════════════════${NC}"
     echo -e "${PURPLE}       服务器专业部署工具 Pro版           ${NC}"
