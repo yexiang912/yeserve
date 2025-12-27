@@ -282,11 +282,7 @@ sudo bash serveui.sh
 3. **Websoft9** - 应用市场管理器
 4. **1Panel + 宝塔** - 基础面板继续支持
 
-#### 🛠️ **专业工具集合**
-- 系统监控：netdata, prometheus, grafana
-- 网络分析：tcpdump, wireshark, mtr
-- 安全工具：fail2ban, rkhunter, lynis
-- 开发工具：Node.js, Python, Java, PHP完整环境
+ 开发工具：Node.js, Python, Java, PHP完整环境
 
 #### 🗄️ **数据库系统**
 - MySQL 8.0+ 数据库
@@ -301,11 +297,7 @@ sudo bash serveui.sh
 - 负载均衡配置
 - SSL证书自动管理
 
-#### 📊 **监控系统**
-- 服务状态实时监控
-- 资源使用率监控
-- 自动告警通知
-- 性能分析和优化建议
+
 
 #### 🛡️ **安全加固**
 - SSH深度安全配置
@@ -321,27 +313,6 @@ sudo bash serveui.sh
 ```
 http://111.229.143.188:51854
 ```
-
-### 部署说明
-- 该示例展示YeServe部署的网站效果
-- 使用基础版或GUI版可部署类似网站
-- 具体配置参数需要根据实际情况调整
-
-### 部署类型
-1. **静态网站** - HTML/CSS/JS直接部署
-2. **WordPress博客** - PHP + MySQL环境
-3. **Node.js应用** - Node.js运行环境
-4. **Python Web应用** - Python + 框架部署
-
-### 部署流程
-```bash
-1. 选择网站类型
-2. 配置数据库（如需）
-3. 设置域名和SSL
-4. 部署和验证
-```
-
----
 
 ## 🚨 风险控制建议
 
