@@ -76,10 +76,9 @@ validate_access() {
         echo ""
     fi
     
-    local salt="websoft9_pro_deploy_salt_2025"
-    local expected_hash="d60a5b8f3c7e2a1f9b4d8c7a6e5f4b3c2d1e0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0"
-    local salted_input="${salt}${user_input}"
-    local input_hash=$(echo -n "$salted_input" | sha256sum | awk '{print $1}')
+    # 使用你提供的哈希值，不添加盐值
+    local expected_hash="5c80565db6f29da0b01aa12522c37b32f121cbe47a861ef7f006cb22922dffa1"
+    local input_hash=$(echo -n "$user_input" | sha256sum | awk '{print $1}')
     
     if [ "$input_hash" != "$expected_hash" ]; then
         if [ "$CURRENT_LANG" = "zh" ]; then
