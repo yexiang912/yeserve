@@ -67,8 +67,10 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/pro.sh)"
 ```
 ```bash
-# 拉取运行双语言高级版
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh)"
+#拉取运行双语言高级版
+sudo wget -O /tmp/servepro.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh
+sudo chmod +x /tmp/servepro.sh
+sudo /tmp/servepro.sh
 ```
 **核心功能：**
 - 🔒 **访问验证系统** - 专业授权机制
