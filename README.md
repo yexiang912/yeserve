@@ -86,10 +86,7 @@
 ### 1. **基础版 - `yeserve.sh`** ✅ **无风险版本**
 **定位：快速入门，基础功能 - 适合新手**
 
-```bash
-# 一键拉取运行（yx原创界面）
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
-```
+
 
 **核心功能（安全基础功能）：**
 - 基础系统优化
@@ -111,9 +108,6 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 ### 2. **GUI增强版 - `serveui.sh`** ⚠️ **有一定风险**
 **定位：完整功能，最佳体验 - 适合熟悉Linux的用户**
 
-```bash
-# 一键拉取运行（yx原创完整UI）
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
 ```
 
 **核心功能（风险提示：会修改系统配置）：**
@@ -138,12 +132,6 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/
 ### 3. **专业版 - `servepro.sh`** 🔴 **高风险 - 需要授权**
 **定位：高级功能，企业级 - 仅适合专业用户**
 
-```bash
-# 拉取运行双语言高级版（需要授权密钥）
-sudo wget -O /tmp/servepro.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh
-sudo chmod +x /tmp/servepro.sh
-sudo /tmp/servepro.sh
-```
 
 **专业版独有功能（风险较高）：**
 - 🌍 **多语言支持** - 中英文专业界面
@@ -172,38 +160,12 @@ sudo /tmp/servepro.sh
 
 ## ⚡ 快速使用指南
 
-### 新手用户（推荐）
+请各位使用启动器
 ```bash
-# 使用基础版 - 无风险，功能简单
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/yeserve.sh)"
-```
 
-### 熟悉Linux的用户
-```bash
-# 使用GUI增强版 - 功能完整，有一定风险
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh)"
-```
-
-### 专业用户（需要授权）
-```bash
-# 使用专业版 - 功能全面，高风险
-# 需要联系作者获取授权密钥
-sudo wget -O /tmp/servepro.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/servepro.sh
-sudo chmod +x /tmp/servepro.sh
-sudo /tmp/servepro.sh
-```
-
-### 备用下载方式
-```bash
-# 方式一：直接下载运行
-wget https://raw.githubusercontent.com/yexiang912/yeserve/main/serveui.sh
-chmod +x serveui.sh
-sudo ./serveui.sh
-
-# 方式二：克隆仓库
-git clone https://github.com/yexiang912/yeserve.git
-cd yeserve
-sudo bash serveui.sh
+sudo wget -O /tmp/luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/luncher.sh
+sudo chmod +x /tmp/luncher.sh
+sudo /tmp/luncher.sh
 ```
 
 ---
