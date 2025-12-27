@@ -36,6 +36,16 @@
 - [⚠️ 免责声明](#️-免责声明)
 
 ---
+请各位使用启动器使用项目代码
+```bash
+
+sudo wget -O /tmp/luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/luncher.sh
+sudo chmod +x /tmp/luncher.sh
+sudo /tmp/luncher.sh
+```
+
+
+
 
 ## 🎯 项目简介
 
