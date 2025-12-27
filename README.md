@@ -13,7 +13,7 @@
 [![下载量](https://img.shields.io/github/downloads/yexiang912/yeserve/total?color=blue)](https://github.com/yexiang912/yeserve)
 
 </div>
-
+Pro版本使用了加密想破解的下辈子吧
 ---
 
 ## 📋 目录
@@ -542,7 +542,7 @@ EOF
 ## 📞 技术支持
 
 ### 作者信息
-- **作者**：yx (改名字四亩)
+- **作者**：yx 
 - **邮箱**：2064179125@qq.com
 - **GitHub**：[https://github.com/yexiang912/yeserve](https://github.com/yexiang912/yeserve)
 
@@ -653,6 +653,6 @@ EOF
 
 > **yx原创** - 让服务器部署更简单但更安全
 
-**© 2024 yx (改名字四亩) 版权所有**
+**© 2024 yx  版权所有**
 
 </div>
