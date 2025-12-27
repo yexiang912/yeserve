@@ -38,8 +38,8 @@ validate_access() {
         echo ""
     fi
     
-    local expected_hash="be55972a216a75cad853f0df62441b548db7957e8e0f46a978e9b1942d430afe"
-    local input_hash=$(echo -n "$user_input" | sha256sum | awk '{print $1}')
+local expected_hash="be55972a216a75cad853f0df62441b548db7957e8e0f46a978e9b1942d430afe"
+local input_hash=$(echo -n "$user_input" | sha256sum | awk '{print $1}')
     
     if [ "$input_hash" != "$expected_hash" ]; then
         echo -e "${RED}❌ 访问验证失败！${NC}"
