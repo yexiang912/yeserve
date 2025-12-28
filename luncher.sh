@@ -1,6 +1,6 @@
 #!/bin/bash
 
-LAUNCHER_VERSION="3.0"
+LAUNCHER_VERSION="3.1"
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -12,47 +12,63 @@ WHITE='\033[1;37m'
 NC='\033[0m'
 
 install_utf8_packages() {
-    dialog --infobox "正在安装UTF-8语言包..." 6 40
+    clear
+    echo -e "${CYAN}安装UTF-8语言包...${NC}"
     
-    apt-get update -y > /dev/null 2>&1
+    apt-get update -y
     
     local lang_packages=(
         "language-pack-en"
         "language-pack-zh-hans"
         "locales"
-        "fonts-noto-cjk"
     )
     
     for pkg in "${lang_packages[@]}"; do
         if ! dpkg -l | grep -q "^ii  $pkg "; then
-            apt-get install -y "$pkg" > /dev/null 2>&1
+            echo -e "${YELLOW}安装 $pkg ...${NC}"
+            apt-get install -y "$pkg"
         fi
     done
     
-    locale-gen en_US.UTF-8 > /dev/null 2>&1
-    locale-gen zh_CN.UTF-8 > /dev/null 2>&1
-    update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 > /dev/null 2>&1
+    echo -e "${YELLOW}生成语言环境...${NC}"
+    locale-gen en_US.UTF-8
+    locale-gen zh_CN.UTF-8
+    update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
     
     export LANG=en_US.UTF-8
     export LC_ALL=en_US.UTF-8
     
-    dialog --msgbox "UTF-8语言包安装完成 ✓" 8 40
+    echo -e "${GREEN}UTF-8语言包安装完成 ✓${NC}"
+    echo ""
 }
 
 check_encoding() {
     if [ "$LANG" != "en_US.UTF-8" ] && [ "$LANG" != "zh_CN.UTF-8" ]; then
-        dialog --yesno "检测到非UTF-8编码环境\n当前编码: $LANG\n\n是否自动安装UTF-8语言包？" 10 50
-        if [ $? -eq 0 ]; then
-            install_utf8_packages
-        fi
+        install_utf8_packages
     fi
+}
+
+install_dependencies() {
+    echo -e "${CYAN}检查系统依赖...${NC}"
+    
+    if ! command -v dialog >/dev/null 2>&1; then
+        echo -e "${YELLOW}安装dialog工具...${NC}"
+        apt-get install -y dialog
+    fi
+    
+    if ! command -v wget >/dev/null 2>&1; then
+        echo -e "${YELLOW}安装wget工具...${NC}"
+        apt-get install -y wget
+    fi
+    
+    echo -e "${GREEN}系统依赖检查完成 ✓${NC}"
+    echo ""
 }
 
 check_dialog() {
     if ! command -v dialog >/dev/null 2>&1; then
-        dialog --msgbox "正在安装dialog工具..." 6 40
-        apt-get update -y > /dev/null 2>&1
-        apt-get install -y dialog > /dev/null 2>&1
+        apt-get update -y
+        apt-get install -y dialog
     fi
 }
 
@@ -62,14 +78,23 @@ show_main_menu() {
             --backtitle "🚀 YeServe 版本选择器 v$LAUNCHER_VERSION" \
             --title "请选择要运行的版本" \
             --menu "\n每个版本的风险等级和功能不同，请根据经验选择：" \
-            20 60 5 \
+            20 60 6 \
             1 "✅ 基础版 (yeserve.sh) - 低风险，适合新手" \
             2 "⚠️ GUI增强版 (serveui.sh) - 中等风险，功能完整" \
             3 "🔴 专业版 (servepro.sh) - 高风险，需要授权" \
             4 "🛠️ 系统工具" \
-            5 "🚪 退出" \
+            5 "🔄 重新安装依赖" \
+            6 "🚪 退出" \
             3>&1 1>&2 2>&3)
 
+        exit_code=$?
+        
+        if [ $exit_code -ne 0 ]; then
+            clear
+            echo -e "${GREEN}感谢使用 YeServe！${NC}"
+            exit 0
+        fi
+        
         case $choice in
             1)
                 run_basic_version
@@ -84,11 +109,11 @@ show_main_menu() {
                 show_system_tools
                 ;;
             5)
+                reinstall_dependencies
+                ;;
+            6)
                 clear
                 echo -e "${GREEN}感谢使用 YeServe！${NC}"
-                exit 0
-                ;;
-            *)
                 exit 0
                 ;;
         esac
@@ -113,7 +138,8 @@ run_basic_version() {
             echo -e "${YELLOW}========================================${NC}"
             bash yeserve.sh
         else
-            dialog --msgbox "下载失败！请检查网络连接" 8 40
+            echo -e "${RED}下载失败！请检查网络连接${NC}"
+            sleep 2
         fi
     fi
 }
@@ -136,7 +162,8 @@ run_gui_version() {
             echo -e "${YELLOW}========================================${NC}"
             bash serveui.sh
         else
-            dialog --msgbox "下载失败！请检查网络连接" 8 40
+            echo -e "${RED}下载失败！请检查网络连接${NC}"
+            sleep 2
         fi
     fi
 }
@@ -155,7 +182,7 @@ run_pro_version() {
         
         if [ ! -f "servepro.sh" ]; then
             echo -e "${RED}下载失败！${NC}"
-            dialog --msgbox "下载失败！请检查网络连接" 8 40
+            sleep 2
             return
         fi
         
@@ -163,21 +190,31 @@ run_pro_version() {
         
         fix_pro_script
         
-        echo -e "${GREEN}下载完成！准备运行...${NC}"
+        echo -e "${GREEN}下载完成！开始运行...${NC}"
         echo -e "${YELLOW}========================================${NC}"
         echo -e "${RED}⚠️  专业版需要授权密钥${NC}"
         echo -e "${RED}⚠️  仅推荐专业用户使用${NC}"
         echo -e "${YELLOW}========================================${NC}"
         
-        read -p "按回车键开始运行，或按 Ctrl+C 取消... "
+        echo -e "${CYAN}3秒后开始运行...${NC}"
+        sleep 3
         
         echo -e "${GREEN}正在启动专业版...${NC}"
         bash servepro.sh
+        
+        if [ $? -eq 0 ]; then
+            echo -e "${GREEN}专业版脚本执行完成！${NC}"
+        else
+            echo -e "${RED}专业版脚本执行失败${NC}"
+        fi
+        
+        echo ""
+        read -p "按回车键返回主菜单... "
     fi
 }
 
 fix_pro_script() {
-    echo -e "${YELLOW}检查脚本完整性...${NC}"
+    echo -e "${YELLOW}自动修复脚本...${NC}"
     
     if file servepro.sh | grep -q "CRLF"; then
         echo -e "${YELLOW}修复CRLF行结束符...${NC}"
@@ -194,6 +231,8 @@ fix_pro_script() {
         echo -e "\nexport LANG=en_US.UTF-8" >> servepro.sh
         echo -e "export LC_ALL=en_US.UTF-8" >> servepro.sh
     fi
+    
+    echo -e "${GREEN}脚本修复完成 ✓${NC}"
 }
 
 show_system_tools() {
@@ -202,43 +241,56 @@ show_system_tools() {
             --backtitle "系统工具" \
             --title "系统工具菜单" \
             --menu "\n选择要使用的工具：" \
-            15 50 6 \
+            15 50 7 \
             1 "🔄 安装UTF-8语言包" \
             2 "📊 查看系统信息" \
             3 "🔧 修复专业版脚本" \
             4 "🌐 测试网络连接" \
             5 "📁 清理临时文件" \
-            6 "🔙 返回主菜单" \
+            6 "🛠️ 检查系统依赖" \
+            7 "🔙 返回主菜单" \
             3>&1 1>&2 2>&3)
+        
+        exit_code=$?
+        
+        if [ $exit_code -ne 0 ] || [ "$choice" = "7" ]; then
+            return
+        fi
         
         case $choice in
             1)
+                clear
                 install_utf8_packages
+                read -p "按回车键返回... "
                 ;;
             2)
+                clear
                 show_system_info
                 ;;
             3)
+                clear
                 fix_pro_script_tool
                 ;;
             4)
+                clear
                 test_network
+                read -p "按回车键返回... "
                 ;;
             5)
+                clear
                 cleanup_temp_files
+                read -p "按回车键返回... "
                 ;;
             6)
-                return
-                ;;
-            *)
-                return
+                clear
+                install_dependencies
+                read -p "按回车键返回... "
                 ;;
         esac
     done
 }
 
 show_system_info() {
-    clear
     echo -e "${CYAN}系统信息：${NC}"
     echo "操作系统: $(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '\"')"
     echo "内核版本: $(uname -r)"
@@ -254,67 +306,82 @@ show_system_info() {
 
 fix_pro_script_tool() {
     if [ -f "servepro.sh" ]; then
-        dialog --yesno "是否修复 servepro.sh 脚本？" 8 40
-        if [ $? -eq 0 ]; then
-            fix_pro_script
-            dialog --msgbox "脚本修复完成 ✓" 8 40
-        fi
+        echo -e "${CYAN}修复专业版脚本...${NC}"
+        fix_pro_script
+        echo -e "${GREEN}脚本修复完成 ✓${NC}"
     else
-        dialog --msgbox "servepro.sh 文件不存在，请先下载专业版" 8 40
+        echo -e "${RED}servepro.sh 文件不存在${NC}"
+        echo -e "${YELLOW}请先下载专业版脚本${NC}"
     fi
+    echo ""
+    read -p "按回车键返回... "
 }
 
 test_network() {
-    dialog --infobox "测试网络连接..." 6 40
+    echo -e "${CYAN}测试网络连接...${NC}"
     
     local urls=(
-        "https://github.com"
-        "https://raw.githubusercontent.com"
-        "https://download.docker.com"
+        "github.com"
+        "raw.githubusercontent.com"
+        "download.docker.com"
     )
     
-    local result="网络测试结果：\n"
-    
     for url in "${urls[@]}"; do
-        if wget --spider --timeout=5 --tries=1 "$url" 2>/dev/null; then
-            result+="✅ $url\n"
+        echo -n "测试 $url ... "
+        if ping -c 1 -W 2 "$url" >/dev/null 2>&1; then
+            echo -e "${GREEN}✓ 可用${NC}"
         else
-            result+="❌ $url\n"
+            echo -e "${RED}✗ 不可用${NC}"
         fi
     done
-    
-    dialog --msgbox "$result" 12 50
 }
 
 cleanup_temp_files() {
-    dialog --yesno "清理临时文件？\n\n将清理：\n• 下载的脚本文件\n• 临时日志文件\n\n确定继续？" 12 50
-    if [ $? -eq 0 ]; then
-        rm -f yeserve.sh serveui.sh servepro.sh 2>/dev/null
-        find /tmp -name "yeserve-*" -type f -delete 2>/dev/null
-        dialog --msgbox "临时文件清理完成 ✓" 8 40
-    fi
+    echo -e "${CYAN}清理临时文件...${NC}"
+    
+    rm -f yeserve.sh serveui.sh servepro.sh 2>/dev/null
+    find /tmp -name "yeserve-*" -type f -delete 2>/dev/null
+    find /tmp -name "*.sh" -type f -mtime +1 -delete 2>/dev/null
+    
+    echo -e "${GREEN}临时文件清理完成 ✓${NC}"
 }
 
-show_welcome() {
-    dialog --clear \
-        --backtitle "YeServe 启动器" \
-        --title "欢迎使用 YeServe" \
-        --msgbox "🚀 YeServe - Ubuntu 服务器一键部署工具集\n\n版本：v$LAUNCHER_VERSION\n\n🛠️ 新功能：\n• 自动UTF-8编码支持\n• 脚本自动修复\n• 系统工具集成\n\n⚠️ 重要提醒：\n运行脚本前请确保已备份重要数据！" \
-        15 60
+reinstall_dependencies() {
+    clear
+    echo -e "${CYAN}重新安装依赖...${NC}"
+    install_utf8_packages
+    install_dependencies
+    read -p "按回车键返回主菜单... "
 }
 
 check_root() {
     if [ "$EUID" -ne 0 ]; then
-        dialog --msgbox "请使用 sudo 运行此脚本：\n\nsudo ./gui-launcher.sh" 10 50
+        echo -e "${RED}请使用 sudo 运行此脚本：${NC}"
+        echo -e "${YELLOW}sudo ./gui-launcher.sh${NC}"
         exit 1
     fi
 }
 
+show_welcome() {
+    clear
+    echo -e "${PURPLE}"
+    echo "╔═══════════════════════════════════════════════════╗"
+    echo "║                                                   ║"
+    echo "║        🚀 YeServe GUI 启动器 v$LAUNCHER_VERSION        ║"
+    echo "║         自动编码修复 + 依赖安装                   ║"
+    echo "║                                                   ║"
+    echo "╚═══════════════════════════════════════════════════╝"
+    echo -e "${NC}"
+    echo ""
+    echo -e "${CYAN}正在准备环境...${NC}"
+    echo ""
+}
+
 main() {
     check_root
-    check_encoding
-    check_dialog
     show_welcome
+    check_encoding
+    install_dependencies
     show_main_menu
 }
 
