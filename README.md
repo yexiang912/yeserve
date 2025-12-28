@@ -92,9 +92,10 @@ v9.5版本引入了启动器，自动从GitHub获取最新版本的脚本：
 ### 启动器使用方法
 ```bash
 # 使用启动器（推荐）
-sudo wget -O /tmp/yeserve-launcher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
-sudo chmod +x /tmp/yeserve-launcher.sh
-sudo /tmp/yeserve-launcher.sh
+sudo wget -O luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/luncher.sh
+sudo chmod +x luncher.sh
+sudo ./luncher.sh
+
 ```
 
 ### 启动器工作原理
@@ -165,9 +166,9 @@ sudo /tmp/yeserve-launcher.sh
 ### 方法一：使用启动器（推荐）
 ```bash
 # 下载并运行启动器
-sudo wget -O /tmp/yeserve-launcher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
-sudo chmod +x /tmp/yeserve-launcher.sh
-sudo /tmp/yeserve-launcher.sh
+sudo wget -O luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/luncher.sh
+sudo chmod +x luncher.sh
+sudo ./luncher.sh
 ```
 
 ### 方法二：直接运行脚本
