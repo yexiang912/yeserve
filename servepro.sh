@@ -1,7 +1,5 @@
 #!/bin/bash
-# 自解密脚本 - 运行时自动解密执行
 
-# 颜色定义
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -11,7 +9,6 @@ CYAN='\033[0;36m'
 NC='\033[0m'
 sudo apt-get install openssl
 
-# 显示解密界面
 show_decrypt_header() {
     echo -e "${PURPLE}"
     echo "╔══════════════════════════════════════════════════════════╗"
@@ -24,24 +21,20 @@ show_decrypt_header() {
     echo ""
 }
 
-# 提取加密数据
 extract_encrypted_data() {
-    # 找到加密数据开始标记
+
     local line_num=0
     local data_started=0
     local temp_file=$(mktemp /tmp/encrypted_data_XXXXXXXX.bin)
-    
-    # 读取脚本文件，提取加密数据
+ 
     while IFS= read -r line; do
         ((line_num++))
         
-        # 查找数据开始标记
+
         if [[ "$line" == "__ENCRYPTED_DATA_START__" ]]; then
             data_started=1
             continue
-        fi
-        
-        # 如果数据已开始，写入到临时文件
+
         if [[ $data_started -eq 1 ]]; then
             if [[ "$line" == "__ENCRYPTED_DATA_END__" ]]; then
                 break
@@ -53,7 +46,6 @@ extract_encrypted_data() {
     echo "$temp_file"
 }
 
-# 解密函数
 decrypt_script() {
     local max_attempts=3
     local attempt=1
@@ -65,7 +57,6 @@ decrypt_script() {
         echo -e "${CYAN}提示：密码区分大小写${NC}"
         echo ""
         
-        # 读取密码（不显示）
         read -sp "密码: " password
         echo ""
         echo ""
@@ -76,8 +67,7 @@ decrypt_script() {
             ((attempt++))
             continue
         fi
-        
-        # 提取加密数据
+
         echo -e "${BLUE}正在提取加密数据...${NC}"
         encrypted_file=$(extract_encrypted_data)
         
@@ -88,41 +78,33 @@ decrypt_script() {
         fi
         
         echo -e "${BLUE}正在解密脚本...${NC}"
-        
-        # 创建解密后的脚本文件
+
         TEMP_SCRIPT=$(mktemp /tmp/decrypted_script_XXXXXXXX.sh)
-        
-        # 尝试解密（base64解码后解密）
+
         if base64 -d < "$encrypted_file" 2>/dev/null | \
            openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -d -salt \
-           -pass pass:"$password" -out "$TEMP_SCRIPT" 2>/dev/null; then
-            
-            # 检查解密后的脚本是否有效
+
             if [[ $(head -n 1 "$TEMP_SCRIPT" 2>/dev/null) == "#!/bin/bash" ]]; then
                 echo -e "${GREEN}✓ 密码验证成功！${NC}"
                 echo ""
                 
-                # 清理临时文件
                 rm -f "$encrypted_file"
                 
                 # 给解密后的脚本添加执行权限
-                chmod +x "$TEMP_SCRIPT"
-                
-                # 执行解密后的脚本
+        
                 echo -e "${CYAN}正在启动服务器部署工具...${NC}"
                 echo -e "${CYAN}══════════════════════════════════════════════${NC}"
                 echo ""
                 
-                # 执行并传递所有参数
+      
                 exec bash "$TEMP_SCRIPT" "$@"
                 
-                # 如果exec失败，清理并退出
+         
                 rm -f "$TEMP_SCRIPT"
                 exit 0
             fi
         fi
-        
-        # 清理临时文件
+
         rm -f "$encrypted_file" "$TEMP_SCRIPT" 2>/dev/null
         
         echo -e "${RED}✗ 密码错误！${NC}"
@@ -145,9 +127,9 @@ decrypt_script() {
     exit 1
 }
 
-# 主执行逻辑
+
 main() {
-    # 检查是否有openssl
+ 
     if ! command -v openssl &>/dev/null; then
         echo -e "${RED}错误：需要 openssl 工具${NC}"
         echo -e "${YELLOW}请安装: sudo apt-get install openssl${NC}"
@@ -162,7 +144,7 @@ main() {
     decrypt_script "$@"
 }
 
-# 执行主函数
+
 main "$@"
 
 __ENCRYPTED_DATA_START__
