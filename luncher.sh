@@ -11,9 +11,8 @@ CYAN='\033[0;36m'
 WHITE='\033[1;37m'
 NC='\033[0m'
 
-# 立即设置UTF-8环境
-export LANG=en_US.UTF-8
-export LC_ALL=en_US.UTF-8
+export LANG=zh_CN.UTF-8
+export LC_ALL=zh_CN.UTF-8
 
 install_chinese_packages() {
     clear
@@ -30,11 +29,11 @@ install_chinese_packages() {
     locale-gen zh_CN.UTF-8 >/dev/null 2>&1
     
     echo -e "${YELLOW}3. 配置系统语言...${NC}"
-    update-locale LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 >/dev/null 2>&1
+    update-locale LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 >/dev/null 2>&1
     
     echo -e "${YELLOW}4. 设置环境变量...${NC}"
-    echo 'export LANG=en_US.UTF-8' >> ~/.bashrc
-    echo 'export LC_ALL=en_US.UTF-8' >> ~/.bashrc
+    echo 'export LANG=zh_CN.UTF-8' >> ~/.bashrc
+    echo 'export LC_ALL=zh_CN.UTF-8' >> ~/.bashrc
     
     source ~/.bashrc
     
@@ -48,6 +47,13 @@ install_chinese_packages() {
 check_and_install_utf8() {
     if ! locale -a | grep -q "en_US.utf8\|zh_CN.utf8"; then
         install_chinese_packages
+    fi
+}
+
+install_openssl() {
+    if ! command -v openssl >/dev/null 2>&1; then
+        echo -e "${YELLOW}安装openssl...${NC}"
+        apt-get install -y openssl >/dev/null 2>&1
     fi
 }
 
@@ -123,7 +129,6 @@ run_script() {
             echo -e "${GREEN}开始运行 $name...${NC}"
             echo -e "${YELLOW}================================${NC}"
             
-            # 关键修复：捕获脚本执行状态
             if bash "$filename"; then
                 echo ""
                 echo -e "${GREEN}✅ $name 执行完成！${NC}"
@@ -161,7 +166,6 @@ run_pro_version() {
         
         chmod +x servepro.sh
         
-        # 自动修复专业版脚本
         echo -e "${YELLOW}检查脚本完整性...${NC}"
         
         if file servepro.sh | grep -q "CRLF"; then
@@ -177,14 +181,11 @@ run_pro_version() {
         echo -e "${GREEN}开始运行专业版...${NC}"
         echo -e "${YELLOW}================================${NC}"
         
-        # 关键修复：确保脚本完全执行
         echo -e "${RED}⚠️  需要授权密钥${NC}"
         echo ""
         
-        # 运行脚本并等待完成
         bash servepro.sh
         
-        # 等待脚本完全执行
         wait $!
         
         echo ""
@@ -261,8 +262,8 @@ welcome() {
     echo -e "${CYAN}正在初始化环境...${NC}"
     echo ""
     
-    # 安装必要组件
     check_and_install_utf8
+    install_openssl
     install_dialog
     
     echo -e "${GREEN}环境准备完成！${NC}"
