@@ -98,7 +98,7 @@ v10.4版本启动器升级为Zenity GUI，自动从GitHub获取最新版本的�
 ### 启动器使用方法
 ```bash
 # 使用启动器（推荐）
-sudo wget -O luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
+sudo wget -O launcher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
 sudo chmod +x launcher.sh
 sudo ./launcher.sh
 
@@ -182,9 +182,11 @@ sudo ./launcher.sh
 ### 方法一：使用启动器（推荐）
 ```bash
 # 下载并运行启动器
-sudo wget -O luncher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
+# 使用启动器（推荐）
+sudo wget -O launcher.sh https://raw.githubusercontent.com/yexiang912/yeserve/main/launcher.sh
 sudo chmod +x launcher.sh
 sudo ./launcher.sh
+
 ```
 
 ### 方法二：直接运行脚本
